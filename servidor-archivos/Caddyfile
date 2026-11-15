@@ -1,0 +1,27 @@
+# Fotos y videos para el público (este subdominio va con la nube naranja de Cloudflare: caché)
+media.{$DOMINIO} {
+	root * /archivos
+	@subidas path /subidas/*
+	handle @subidas {
+		header Cache-Control "public, max-age=31536000, immutable"
+		header Access-Control-Allow-Origin "*"
+		header X-Content-Type-Options "nosniff"
+		file_server
+	}
+	handle {
+		respond "Novedades Sucumbíos: servidor de archivos" 200
+	}
+}
+
+# Subidas desde el panel (nube gris en Cloudflare: sin límite de 100 MB)
+subir.{$DOMINIO} {
+	request_body {
+		max_size 1100MB
+	}
+	reverse_proxy archivos:3000 {
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+}

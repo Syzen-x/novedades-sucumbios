@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { ahoraIso, idYoutube } from "./util.js";
 import { requiere, mismoOrigen, limiteIngreso, iniciarSesion, cerrarSesion, verificarClave, hashClave, validarClave, crearUsuario } from "./auth.js";
 import { resumen, registrarEventoAnuncio } from "./estadisticas.js";
+import { TIPOS, MAXIMO, archivosListos, nuevaClave, urlFirmada, borrarArchivo } from "./archivos.js";
 
 export const api = new Hono();
 api.use("*", mismoOrigen);
@@ -41,59 +42,27 @@ api.put("/yo/clave", requiere(), async (c) => {
   return c.json({ ok: true });
 });
 
-/* ---------------- Subida de archivos a R2 ---------------- */
-const TIPOS = {
-  "image/jpeg": ["imagen", "jpg"], "image/png": ["imagen", "png"], "image/webp": ["imagen", "webp"],
-  "image/gif": ["imagen", "gif"], "image/avif": ["imagen", "avif"],
-  "video/mp4": ["video", "mp4"], "video/webm": ["video", "webm"], "video/quicktime": ["video", "mov"],
-};
-const MAXIMO_DIRECTO = 95 * 1024 * 1024;   // una sola petición
-const MAXIMO_TOTAL = 1024 * 1024 * 1024;   // por partes (videos grandes)
-
-function nuevaClave(tipoMime) {
-  const al = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return `subidas/${new Date().toISOString().slice(0, 7)}/${al}.${TIPOS[tipoMime][1]}`;
-}
-
-api.post("/subir", requiere(), async (c) => {
-  const mime = (c.req.header("content-type") || "").split(";")[0].trim();
-  const largo = Number(c.req.header("content-length") || 0);
-  if (!TIPOS[mime]) return error(c, 400, "Formato no permitido. Usa JPG, PNG, WEBP, GIF, MP4 o WEBM.");
-  if (!largo || largo > MAXIMO_DIRECTO) return error(c, 400, "El archivo es muy grande para subirlo de una vez.");
-  const clave = nuevaClave(mime);
-  await c.env.MEDIA.put(clave, c.req.raw.body, { httpMetadata: { contentType: mime, cacheControl: "public, max-age=31536000, immutable" } });
-  return c.json({ url: "/" + clave, tipo: TIPOS[mime][0] });
-});
-
-// Videos grandes: se suben por partes
-api.post("/subir/iniciar", requiere(), async (c) => {
+/* ---------------- Subida de archivos al VPS ---------------- */
+// El panel pide permiso aquí y luego sube el archivo directo al VPS con la dirección firmada.
+api.post("/subir/permiso", requiere(), async (c) => {
+  if (!archivosListos(c.env)) {
+    return error(c, 503, "Todavía no está conectado el servidor de archivos (VPS). Mientras tanto, para videos pega un enlace de YouTube o Facebook.");
+  }
   const { tipo, tamano } = await cuerpo(c);
-  if (!TIPOS[tipo]) return error(c, 400, "Formato no permitido. Usa MP4 o WEBM.");
-  if (Number(tamano) > MAXIMO_TOTAL) return error(c, 400, "El video pesa más de 1 GB. Recórtalo o súbelo a YouTube y pega el enlace.");
+  if (!TIPOS[tipo]) return error(c, 400, "Formato no permitido. Usa JPG, PNG, WEBP, GIF, MP4 o WEBM.");
+  if (!(Number(tamano) > 0)) return error(c, 400, "El archivo está vacío.");
+  if (Number(tamano) > MAXIMO) return error(c, 400, "El archivo pesa más de 1 GB. Recórtalo o súbelo a YouTube y pega el enlace.");
   const clave = nuevaClave(tipo);
-  const subida = await c.env.MEDIA.createMultipartUpload(clave, { httpMetadata: { contentType: tipo, cacheControl: "public, max-age=31536000, immutable" } });
-  return c.json({ clave, id: subida.uploadId });
-});
-api.put("/subir/parte", requiere(), async (c) => {
-  const { clave, id, n } = c.req.query();
-  if (!/^subidas\/\d{4}-\d{2}\/[a-f0-9]{16}\.\w+$/.test(clave || "")) return error(c, 400, "Subida no válida.");
-  const parte = await c.env.MEDIA.resumeMultipartUpload(clave, id).uploadPart(Number(n), c.req.raw.body);
-  return c.json(parte);
-});
-api.post("/subir/completar", requiere(), async (c) => {
-  const { clave, id, partes } = await cuerpo(c);
-  if (!/^subidas\/\d{4}-\d{2}\/[a-f0-9]{16}\.\w+$/.test(clave || "")) return error(c, 400, "Subida no válida.");
-  await c.env.MEDIA.resumeMultipartUpload(clave, id).complete(partes);
-  return c.json({ url: "/" + clave, tipo: "video" });
+  return c.json({ subir: await urlFirmada(c.env, "PUT", clave), url: "/" + clave, tipo: TIPOS[tipo][0] });
 });
 
-/** Borra de R2 los archivos que ya no usa ninguna noticia ni anuncio */
+/** Borra del VPS los archivos que ya no usa ninguna noticia ni anuncio */
 async function borrarArchivosSueltos(c, urls) {
   const b = base(c.env);
   for (const url of new Set(urls.filter((u) => typeof u === "string" && u.startsWith("/subidas/")))) {
     const enUso = await b.uno(`SELECT 1 FROM noticias WHERE imagen = ?1 OR video = ?1 OR galeria LIKE ?2
       UNION SELECT 1 FROM anuncios WHERE src = ?1 OR src_movil = ?1 OR poster = ?1 LIMIT 1`, url, `%"${url}"%`);
-    if (!enUso) await c.env.MEDIA.delete(url.slice(1));
+    if (!enUso) await borrarArchivo(c.env, url.slice(1));
   }
 }
 

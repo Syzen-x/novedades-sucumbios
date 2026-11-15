@@ -23,11 +23,12 @@
       "migrations_dir": "migraciones"
     }
   ],
-  "r2_buckets": [
-    { "binding": "MEDIA", "bucket_name": "novedades-sucumbios-media" }
-  ],
   "vars": {
-    "SITIO_URL": "https://novedadessucumbios.com"
+    "SITIO_URL": "https://novedadessucumbios.com",
+    // Archivos en el VPS. Déjalos vacíos hasta tener el VPS listo.
+    // MEDIA_URL: donde se ven (pasa por la caché de Cloudflare). SUBIDA_URL: donde el panel sube (sin proxy).
+    "MEDIA_URL": "",
+    "SUBIDA_URL": ""
   },
   "observability": { "enabled": true }
 }

@@ -122,23 +122,15 @@
     });
   }
 
-  var PARTE = 50 * 1024 * 1024;
-  /** Sube un archivo y reporta el avance (0 a 100). Los videos grandes se suben por partes. */
+  /** Sube un archivo al servidor de archivos (VPS) y reporta el avance (0 a 100) */
   function subir(archivo, alAvanzar) {
     var avance = function (f) { if (alAvanzar) alAvanzar(Math.min(100, Math.round(f * 100))); };
     return optimizarImagen(archivo).then(function (a) {
-      if (a.size <= 90 * 1024 * 1024) return enviar("POST", "/api/subir", a, a.type, avance);
-      if (!/^video\//.test(a.type)) throw new Error("La imagen pesa demasiado. Usa una de menos de 90 MB.");
-      return api("POST", "/subir/iniciar", { tipo: a.type, tamano: a.size }).then(function (s) {
-        var total = Math.ceil(a.size / PARTE), partes = [];
-        function siguiente(i) {
-          if (i > total) return api("POST", "/subir/completar", { clave: s.clave, id: s.id, partes: partes });
-          var trozo = a.slice((i - 1) * PARTE, Math.min(a.size, i * PARTE));
-          var url = "/api/subir/parte?clave=" + encodeURIComponent(s.clave) + "&id=" + encodeURIComponent(s.id) + "&n=" + i;
-          return enviar("PUT", url, trozo, "application/octet-stream", function (f) { avance((i - 1 + f) / total); })
-            .then(function (p) { partes.push(p); return siguiente(i + 1); });
-        }
-        return siguiente(1);
+      // 1) el servidor da un permiso firmado, 2) el archivo va directo al VPS
+      return api("POST", "/subir/permiso", { tipo: a.type, tamano: a.size }).then(function (permiso) {
+        return enviar("PUT", permiso.subir, a, a.type, avance).then(function () {
+          return { url: permiso.url, tipo: permiso.tipo };
+        });
       });
     });
   }

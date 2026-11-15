@@ -3,6 +3,7 @@ import { base, ajustes } from "./db.js";
 import { config, sitio } from "./config.js";
 import { escapar as e, slug, textoAHtml, textoPlano, fechaLarga, idYoutube } from "./util.js";
 import { registrarVisita, hoy } from "./estadisticas.js";
+import { enMedia } from "./archivos.js";
 
 export const paginas = new Hono();
 
@@ -34,7 +35,7 @@ async function comunes(c) {
   const s = sitio(c);
   return {
     sitio: s,
-    abs: (u) => (!u ? "" : /^https?:\/\//.test(u) ? u : s + (u.startsWith("/") ? u : "/" + u)),
+    abs: (u) => { u = enMedia(c.env, u); return !u ? "" : /^https?:\/\//.test(u) ? u : s + (u.startsWith("/") ? u : "/" + u); },
     seguidores: aj.seguidores || config.seguidores,
     whatsapp: aj.whatsapp || "",
     cinta: urgentes.length ? urgentes : recientes,
@@ -259,7 +260,9 @@ const organizacion = (d) => ({
 
 const html = (c, contenido, estado = 200) => {
   c.header("Cache-Control", "no-cache");
-  return c.html(contenido, estado);
+  // las fotos y videos subidos se sirven desde el VPS (media.…), no desde este servidor
+  const media = (c.env.MEDIA_URL || "").replace(/\/$/, "");
+  return c.html(media ? contenido.replaceAll('"/subidas/', `"${media}/subidas/`) : contenido, estado);
 };
 
 /* ---------------- En vivo dentro de la portada ---------------- */
@@ -585,34 +588,10 @@ paginas.get("/buscar", async (c) => {
   ${pie(d)}`);
 });
 
-/* ---------------- Fotos y videos guardados en R2 ---------------- */
-paginas.get("/subidas/*", async (c) => {
-  const clave = decodeURIComponent(new URL(c.req.url).pathname.slice(1));
-  const rango = c.req.header("range");
-  const cache = caches.default;
-  if (!rango) {
-    const guardado = await cache.match(c.req.raw);
-    if (guardado) return guardado;
-  }
-  const obj = await c.env.MEDIA.get(clave, { range: c.req.raw.headers, onlyIf: c.req.raw.headers });
-  if (!obj) return c.text("Archivo no encontrado", 404);
-  const cabeceras = new Headers();
-  obj.writeHttpMetadata(cabeceras);
-  cabeceras.set("etag", obj.httpEtag);
-  cabeceras.set("accept-ranges", "bytes");
-  cabeceras.set("cache-control", "public, max-age=31536000, immutable");
-  if (!("body" in obj) || !obj.body) return new Response(null, { status: 304, headers: cabeceras });
-  if (rango && obj.range) {
-    const inicio = obj.range.offset ?? 0;
-    const largo = obj.range.length ?? obj.size - inicio;
-    cabeceras.set("content-range", `bytes ${inicio}-${inicio + largo - 1}/${obj.size}`);
-    cabeceras.set("content-length", String(largo));
-    return new Response(obj.body, { status: 206, headers: cabeceras });
-  }
-  cabeceras.set("content-length", String(obj.size));
-  const respuesta = new Response(obj.body, { headers: cabeceras });
-  if (obj.size < 25 * 1024 * 1024) c.executionCtx.waitUntil(cache.put(c.req.raw, respuesta.clone()));
-  return respuesta;
+/* ---------------- Fotos y videos: están en el VPS ---------------- */
+paginas.get("/subidas/*", (c) => {
+  const destino = enMedia(c.env, new URL(c.req.url).pathname);
+  return destino.startsWith("http") ? c.redirect(destino, 302) : c.text("Archivo no encontrado", 404);
 });
 
 /* ---------------- SEO: robots, sitemaps, RSS, manifest ---------------- */
@@ -626,7 +605,7 @@ const xml = (c, cuerpo, tipo = "application/xml") => c.body(cuerpo, 200, { "cont
 paginas.get("/sitemap.xml", async (c) => {
   const s = sitio(c);
   const noticias = await base(c.env).todos(`SELECT slug, actualizada_en, imagen FROM noticias WHERE ${PUBLICADAS} ORDER BY publicada_en DESC LIMIT 45000`);
-  const abs = (u) => (/^https?:/.test(u) ? u : s + u);
+  const abs = (u) => { u = enMedia(c.env, u); return /^https?:/.test(u) ? u : s + u; };
   return xml(c, `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 <url><loc>${s}/</loc><changefreq>hourly</changefreq><priority>1.0</priority></url>
@@ -649,7 +628,7 @@ ${noticias.map((n) => `<url><loc>${s}/noticia/${n.slug}</loc><news:news><news:pu
 paginas.get("/rss.xml", async (c) => {
   const s = sitio(c);
   const noticias = await base(c.env).todos(`SELECT * FROM noticias WHERE ${PUBLICADAS} ORDER BY publicada_en DESC LIMIT 30`);
-  const abs = (u) => (/^https?:/.test(u) ? u : s + u);
+  const abs = (u) => { u = enMedia(c.env, u); return /^https?:/.test(u) ? u : s + u; };
   return xml(c, `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
 <channel>

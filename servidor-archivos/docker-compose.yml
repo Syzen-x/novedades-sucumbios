@@ -1,0 +1,36 @@
+services:
+  # Recibe las subidas y borrados firmados desde el panel
+  archivos:
+    image: node:24-alpine
+    restart: unless-stopped
+    command: ["node", "/app/server.mjs"]
+    env_file: .env
+    environment:
+      CARPETA: /archivos
+      PUERTO: "3000"
+    volumes:
+      - ./server.mjs:/app/server.mjs:ro
+      - ./archivos:/archivos
+    expose:
+      - "3000"
+
+  # HTTPS automático. Entrega los archivos (media.) y pasa las subidas (subir.) al servicio de arriba.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./archivos:/archivos:ro
+      - caddy_datos:/data
+      - caddy_config:/config
+    depends_on:
+      - archivos
+
+volumes:
+  caddy_datos:
+  caddy_config:
