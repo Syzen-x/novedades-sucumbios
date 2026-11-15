@@ -1,0 +1,12 @@
+/panel/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
+  Cache-Control: no-cache
+  X-Robots-Tag: noindex
+
+/assets/*
+  Cache-Control: public, max-age=2592000
+
+/anuncios/*
+  Cache-Control: public, max-age=2592000

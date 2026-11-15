@@ -1,63 +1,52 @@
 # Novedades Sucumbíos — sitio web y panel
 
 Web de noticias de Nueva Loja y toda la provincia de Sucumbíos, con panel para publicar noticias,
-manejar la publicidad y ver estadísticas.
+transmisiones en vivo, publicidad y estadísticas. Funciona en **Cloudflare**:
 
-- **Servidor:** Node.js 22+ con Express. Las páginas se arman en el servidor, así Google y Facebook ven cada noticia completa.
-- **Base de datos:** SQLite, en un solo archivo dentro de `data/`.
-- **Fotos y videos:** se guardan en `data/subidas/`. Las fotos se optimizan solas a WEBP.
-- **Panel:** en `/panel/`, con dos tipos de usuario:
-  - **admin:** todo (noticias, anuncios, estadísticas, usuarios y ajustes).
-  - **editor:** solo publica, edita y borra noticias.
+| Pieza | Servicio de Cloudflare |
+|---|---|
+| Servidor (páginas, panel, API) | Workers (`src/`) con Hono |
+| Base de datos | D1 (SQLite), estructura en `migraciones/` |
+| Fotos y videos | R2 (bucket `novedades-sucumbios-media`) |
+| Archivos fijos (CSS, JS, logo, panel) | Static Assets (`public/`) |
 
-## Probar en tu computadora
+## Panel
+
+`https://novedadessucumbios.com/panel/`
+
+- **admin:** resumen con estadísticas, noticias, en vivo, anuncios, usuarios y ajustes.
+- **editor:** noticias, en vivo y su cuenta.
+
+### Transmisiones en vivo
+
+1. Empieza la transmisión en Facebook (o YouTube) como siempre. Debe ser pública.
+2. En el panel → **En vivo** → **Empezar transmisión**, y pega el enlace del video.
+3. La web muestra al instante una barra roja en todas las páginas, el reproductor en la portada y la página `/en-vivo`.
+4. Al terminar, pulsa **Terminar transmisión**: queda en "Transmisiones anteriores".
+
+## Comandos
 
 ```bash
 npm install
-npm run usuario -- crear admin admin "Administrador"
-npm run dev
+npm run db:local                   # crea la base local de pruebas
+npm run dev                        # web en http://localhost:8787
+npm run desplegar                  # publica en Cloudflare
+npm run db:remoto                  # aplica migraciones nuevas en Cloudflare
 ```
 
-Abre http://localhost:3000 (web) y http://localhost:3000/panel/ (panel).
+Para probar en local hace falta un archivo `.dev.vars` con `SECRETO=<texto largo al azar>`.
+En Cloudflare el secreto se configura una vez con `npx wrangler secret put SECRETO`.
 
-## Instalar en el VPS (Docker)
-
-1. Apunta el dominio (registro A) a la IP del VPS.
-2. En el VPS, con Docker instalado:
+### Usuarios
 
 ```bash
-git clone https://github.com/Syzen-x/novedades-sucumbios.git
-cd novedades-sucumbios
-cp .env.example .env    # y completa DOMINIO y SITIO_URL
-docker compose up -d --build
-docker compose exec web node src/cli-usuario.js crear admin admin "Administrador"
-docker compose exec web node src/cli-usuario.js crear editor editor "Editor"
+npm run usuario -- crear juan admin "Juan Pérez" --remoto
+npm run usuario -- crear maria editor "María López" --remoto
+npm run usuario -- clave juan --remoto        # cambiar contraseña
+npm run usuario -- lista --remoto
 ```
 
-Caddy saca el certificado HTTPS solo. Si el VPS ya usa los puertos 80 y 443 con otro programa (por ejemplo Nginx),
-quita el servicio `caddy` de `docker-compose.yml`, publica el puerto de `web` (`ports: ["127.0.0.1:3000:3000"]`)
-y apunta tu Nginx a `http://127.0.0.1:3000`, con `client_max_body_size 320m;`.
-
-### Actualizar
-
-```bash
-git pull && docker compose up -d --build
-```
-
-### Copias de seguridad
-
-Todo lo que cambia (base de datos, fotos y videos) está en la carpeta `data/`. Copiarla es la copia de seguridad completa:
-
-```bash
-tar czf respaldo-$(date +%F).tgz data
-```
-
-### Usuarios desde la terminal
-
-```bash
-docker compose exec web node src/cli-usuario.js lista
-docker compose exec web node src/cli-usuario.js clave admin      # cambiar contraseña
-```
+Sin `--remoto` trabaja con la base local. También se pueden crear usuarios desde el panel (sección Usuarios).
 
 ## Espacios de publicidad
 
@@ -71,8 +60,14 @@ docker compose exec web node src/cli-usuario.js clave admin      # cambiar contr
 
 Si un anuncio no tiene la medida exacta, se muestra completo y el espacio que sobra se rellena con la misma imagen difuminada.
 
+## Archivos
+
+- **Fotos:** se optimizan en el navegador antes de subirse (máximo 2000 px, formato WEBP).
+- **Videos:** hasta 1 GB. Los de más de 90 MB se suben por partes. Para videos muy largos conviene YouTube.
+
 ## SEO
 
-- **Cada noticia:** título, descripción, enlace canónico, Open Graph y Twitter. Lleva una imagen de 1200 × 630 hecha a partir de la foto, para que se vea bien al compartirla en Facebook y WhatsApp, y datos estructurados `NewsArticle`.
+- **Cada noticia:** título, descripción, enlace canónico, Open Graph y Twitter, y datos estructurados `NewsArticle`.
+- **Transmisión en vivo:** datos `BroadcastEvent`.
 - **Para buscadores:** `sitemap.xml` (con imágenes), `sitemap-noticias.xml` para Google News, `rss.xml` y `robots.txt`.
-- **Al publicar:** registra el sitio en Google Search Console y envía `https://TU-DOMINIO/sitemap.xml`.
+- **Al publicar:** registra el sitio en Google Search Console y envía `https://novedadessucumbios.com/sitemap.xml`.

@@ -1,28 +1,20 @@
-import fs from "node:fs";
-import path from "node:path";
-import crypto from "node:crypto";
-import express from "express";
-import multer from "multer";
-import sharp from "sharp";
-import { db, slugUnico, ajuste, guardarAjuste } from "./db.js";
+import { Hono } from "hono";
+import { base, slugUnico, ajustes, guardarAjuste } from "./db.js";
 import { config } from "./config.js";
 import { ahoraIso, idYoutube } from "./util.js";
-import {
-  requiere, mismoOrigen, limiteIngreso, limpiarIntentos, iniciarSesion, cerrarSesion,
-  verificarClave, hashClave, validarClave, crearUsuario,
-} from "./auth.js";
+import { requiere, mismoOrigen, limiteIngreso, iniciarSesion, cerrarSesion, verificarClave, hashClave, validarClave, crearUsuario } from "./auth.js";
 import { resumen, registrarEventoAnuncio } from "./estadisticas.js";
 
-export const api = express.Router();
-api.use(express.json({ limit: "1mb" }));
-api.use(mismoOrigen);
+export const api = new Hono();
+api.use("*", mismoOrigen);
 
-const error = (res, codigo, mensaje) => res.status(codigo).json({ error: mensaje });
+const error = (c, codigo, mensaje) => c.json({ error: mensaje }, codigo);
 const bool = (v) => (v === true || v === 1 || v === "1" || v === "true" ? 1 : 0);
 const texto = (v, max = 20000) => String(v ?? "").slice(0, max).trim();
+const cuerpo = async (c) => { try { return await c.req.json(); } catch { return {}; } };
 
 export const ESPACIOS = {
-  cabecera: { nombre: "Banner principal", donde: "Debajo de la portada y arriba de cada noticia", medida: "1500 × 500 px (3:1)", proporcion: 3 },
+  cabecera: { nombre: "Banner principal", donde: "Debajo de la portada y al final de cada noticia", medida: "1500 × 500 px (3:1)", proporcion: 3 },
   lateral: { nombre: "Lateral fijo", donde: "Columna derecha, se queda visible al bajar", medida: "600 × 1200 px (1:2)", proporcion: 0.5 },
   entreNoticias: { nombre: "Entre noticias", donde: "En la lista de noticias y dentro del texto de cada nota", medida: "1500 × 500 px (3:1)", proporcion: 3 },
   franja: { nombre: "Franja de video", donde: "A todo lo ancho, en medio de la portada", medida: "1920 × 1080 px (16:9)", proporcion: 16 / 9 },
@@ -30,82 +22,96 @@ export const ESPACIOS = {
 };
 
 /* ---------------- Sesión ---------------- */
-api.post("/ingresar", limiteIngreso, (req, res) => {
-  const { usuario, clave } = req.body || {};
-  const u = db.prepare("SELECT * FROM usuarios WHERE usuario = ?").get(texto(usuario, 60));
-  if (!u || !verificarClave(String(clave || ""), u.clave)) return error(res, 401, "Usuario o contraseña incorrectos.");
-  limpiarIntentos(req.ip);
-  iniciarSesion(res, u.id);
-  res.json({ id: u.id, usuario: u.usuario, nombre: u.nombre, rol: u.rol });
+api.post("/ingresar", limiteIngreso, async (c) => {
+  const { usuario, clave } = await cuerpo(c);
+  const u = await base(c.env).uno("SELECT * FROM usuarios WHERE usuario = ?", texto(usuario, 60));
+  if (!u || !(await verificarClave(String(clave || ""), u.clave))) return error(c, 401, "Usuario o contraseña incorrectos.");
+  await base(c.env).correr("DELETE FROM ajustes WHERE clave = ?", c.get("claveIntentos"));
+  await iniciarSesion(c, u.id);
+  return c.json({ id: u.id, usuario: u.usuario, nombre: u.nombre, rol: u.rol });
 });
-api.post("/salir", (req, res) => { cerrarSesion(req, res); res.json({ ok: true }); });
-api.get("/yo", requiere(), (req, res) => res.json(req.usuario));
-api.put("/yo/clave", requiere(), (req, res) => {
-  const { actual, nueva } = req.body || {};
-  const u = db.prepare("SELECT clave FROM usuarios WHERE id = ?").get(req.usuario.id);
-  if (!verificarClave(String(actual || ""), u.clave)) return error(res, 400, "La contraseña actual no es correcta.");
-  try { validarClave(nueva); } catch (e) { return error(res, 400, e.message); }
-  db.prepare("UPDATE usuarios SET clave = ? WHERE id = ?").run(hashClave(nueva), req.usuario.id);
-  res.json({ ok: true });
-});
-
-/* ---------------- Subida de archivos ---------------- */
-const IMAGENES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
-const VIDEOS = ["video/mp4", "video/webm", "video/quicktime"];
-const subida = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _f, cb) => {
-      const carpeta = path.join(config.subidas, new Date().toISOString().slice(0, 7));
-      fs.mkdirSync(carpeta, { recursive: true });
-      cb(null, carpeta);
-    },
-    filename: (_req, f, cb) => cb(null, crypto.randomBytes(8).toString("hex") + path.extname(f.originalname).toLowerCase().replace(/[^.a-z0-9]/g, "")),
-  }),
-  limits: { fileSize: 300 * 1024 * 1024 },
-  fileFilter: (_req, f, cb) => cb(null, IMAGENES.includes(f.mimetype) || VIDEOS.includes(f.mimetype)),
+api.post("/salir", async (c) => { await cerrarSesion(c); return c.json({ ok: true }); });
+api.get("/yo", requiere(), (c) => c.json(c.get("usuario")));
+api.put("/yo/clave", requiere(), async (c) => {
+  const { actual, nueva } = await cuerpo(c);
+  const u = await base(c.env).uno("SELECT clave FROM usuarios WHERE id = ?", c.get("usuario").id);
+  if (!(await verificarClave(String(actual || ""), u.clave))) return error(c, 400, "La contraseña actual no es correcta.");
+  try { validarClave(nueva); } catch (e) { return error(c, 400, e.message); }
+  await base(c.env).correr("UPDATE usuarios SET clave = ? WHERE id = ?", await hashClave(nueva), c.get("usuario").id);
+  return c.json({ ok: true });
 });
 
-api.post("/subir", requiere(), (req, res) => {
-  subida.single("archivo")(req, res, async (err) => {
-    if (err) return error(res, 400, err.code === "LIMIT_FILE_SIZE" ? "El archivo pesa más de 300 MB." : "No se pudo subir el archivo.");
-    const f = req.file;
-    if (!f) return error(res, 400, "Formato no permitido. Usa JPG, PNG, WEBP, GIF, MP4 o WEBM.");
-    const relativa = (p) => "/subidas/" + path.relative(config.subidas, p).split(path.sep).join("/");
-    try {
-      if (IMAGENES.includes(f.mimetype) && f.mimetype !== "image/gif") {
-        // se optimiza: máximo 2000 px de ancho, formato WEBP
-        const destino = f.path.replace(/\.[^.]+$/, "") + ".webp";
-        const meta = await sharp(f.path).rotate().metadata();
-        await sharp(f.path).rotate().resize({ width: 2000, withoutEnlargement: true }).webp({ quality: 84 }).toFile(destino + ".tmp");
-        fs.rmSync(f.path);
-        fs.renameSync(destino + ".tmp", destino);
-        return res.json({ url: relativa(destino), tipo: "imagen", ancho: Math.min(meta.width, 2000), alto: meta.height });
-      }
-      res.json({ url: relativa(f.path), tipo: VIDEOS.includes(f.mimetype) ? "video" : "imagen" });
-    } catch {
-      fs.rmSync(f.path, { force: true });
-      error(res, 400, "La imagen está dañada o no se puede leer.");
-    }
-  });
+/* ---------------- Subida de archivos a R2 ---------------- */
+const TIPOS = {
+  "image/jpeg": ["imagen", "jpg"], "image/png": ["imagen", "png"], "image/webp": ["imagen", "webp"],
+  "image/gif": ["imagen", "gif"], "image/avif": ["imagen", "avif"],
+  "video/mp4": ["video", "mp4"], "video/webm": ["video", "webm"], "video/quicktime": ["video", "mov"],
+};
+const MAXIMO_DIRECTO = 95 * 1024 * 1024;   // una sola petición
+const MAXIMO_TOTAL = 1024 * 1024 * 1024;   // por partes (videos grandes)
+
+function nuevaClave(tipoMime) {
+  const al = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `subidas/${new Date().toISOString().slice(0, 7)}/${al}.${TIPOS[tipoMime][1]}`;
+}
+
+api.post("/subir", requiere(), async (c) => {
+  const mime = (c.req.header("content-type") || "").split(";")[0].trim();
+  const largo = Number(c.req.header("content-length") || 0);
+  if (!TIPOS[mime]) return error(c, 400, "Formato no permitido. Usa JPG, PNG, WEBP, GIF, MP4 o WEBM.");
+  if (!largo || largo > MAXIMO_DIRECTO) return error(c, 400, "El archivo es muy grande para subirlo de una vez.");
+  const clave = nuevaClave(mime);
+  await c.env.MEDIA.put(clave, c.req.raw.body, { httpMetadata: { contentType: mime, cacheControl: "public, max-age=31536000, immutable" } });
+  return c.json({ url: "/" + clave, tipo: TIPOS[mime][0] });
 });
+
+// Videos grandes: se suben por partes
+api.post("/subir/iniciar", requiere(), async (c) => {
+  const { tipo, tamano } = await cuerpo(c);
+  if (!TIPOS[tipo]) return error(c, 400, "Formato no permitido. Usa MP4 o WEBM.");
+  if (Number(tamano) > MAXIMO_TOTAL) return error(c, 400, "El video pesa más de 1 GB. Recórtalo o súbelo a YouTube y pega el enlace.");
+  const clave = nuevaClave(tipo);
+  const subida = await c.env.MEDIA.createMultipartUpload(clave, { httpMetadata: { contentType: tipo, cacheControl: "public, max-age=31536000, immutable" } });
+  return c.json({ clave, id: subida.uploadId });
+});
+api.put("/subir/parte", requiere(), async (c) => {
+  const { clave, id, n } = c.req.query();
+  if (!/^subidas\/\d{4}-\d{2}\/[a-f0-9]{16}\.\w+$/.test(clave || "")) return error(c, 400, "Subida no válida.");
+  const parte = await c.env.MEDIA.resumeMultipartUpload(clave, id).uploadPart(Number(n), c.req.raw.body);
+  return c.json(parte);
+});
+api.post("/subir/completar", requiere(), async (c) => {
+  const { clave, id, partes } = await cuerpo(c);
+  if (!/^subidas\/\d{4}-\d{2}\/[a-f0-9]{16}\.\w+$/.test(clave || "")) return error(c, 400, "Subida no válida.");
+  await c.env.MEDIA.resumeMultipartUpload(clave, id).complete(partes);
+  return c.json({ url: "/" + clave, tipo: "video" });
+});
+
+/** Borra de R2 los archivos que ya no usa ninguna noticia ni anuncio */
+async function borrarArchivosSueltos(c, urls) {
+  const b = base(c.env);
+  for (const url of new Set(urls.filter((u) => typeof u === "string" && u.startsWith("/subidas/")))) {
+    const enUso = await b.uno(`SELECT 1 FROM noticias WHERE imagen = ?1 OR video = ?1 OR galeria LIKE ?2
+      UNION SELECT 1 FROM anuncios WHERE src = ?1 OR src_movil = ?1 OR poster = ?1 LIMIT 1`, url, `%"${url}"%`);
+    if (!enUso) await c.env.MEDIA.delete(url.slice(1));
+  }
+}
 
 /* ---------------- Noticias (admin y editor) ---------------- */
 function noticiaDesdeCuerpo(b) {
   const titulo = texto(b.titulo, 200);
   if (!titulo) throw new Error("Escribe el título de la noticia.");
-  const canton = config.cantones.includes(b.canton) ? b.canton : "Provincia";
-  let galeria = Array.isArray(b.galeria) ? b.galeria.filter((g) => typeof g === "string").slice(0, 30) : [];
   let fecha = b.publicada_en ? new Date(b.publicada_en) : new Date();
   if (isNaN(fecha)) fecha = new Date();
   return {
     titulo,
     resumen: texto(b.resumen, 400),
     contenido: texto(b.contenido, 60000),
-    canton,
+    canton: config.cantones.includes(b.canton) ? b.canton : "Provincia",
     imagen: texto(b.imagen, 500),
     imagen_texto: texto(b.imagen_texto, 300),
     video: texto(b.video, 500),
-    galeria: JSON.stringify(galeria),
+    galeria: JSON.stringify(Array.isArray(b.galeria) ? b.galeria.filter((g) => typeof g === "string").slice(0, 30) : []),
     enlace_facebook: texto(b.enlace_facebook, 500),
     urgente: bool(b.urgente),
     destacada: bool(b.destacada),
@@ -113,77 +119,120 @@ function noticiaDesdeCuerpo(b) {
     publicada_en: fecha.toISOString(),
   };
 }
-
 const salidaNoticia = (n) => n && { ...n, galeria: JSON.parse(n.galeria || "[]"), urgente: !!n.urgente, destacada: !!n.destacada };
 
-api.get("/noticias", requiere(), (req, res) => {
-  const q = `%${texto(req.query.q, 100)}%`;
-  const pagina = Math.max(1, Number(req.query.pagina) || 1);
+api.get("/noticias", requiere(), async (c) => {
+  const q = `%${texto(c.req.query("q"), 100)}%`;
+  const pagina = Math.max(1, Number(c.req.query("pagina")) || 1);
   const porPagina = 30;
-  const filas = db.prepare(`SELECT n.id, n.slug, n.titulo, n.canton, n.imagen, n.estado, n.urgente, n.destacada, n.publicada_en,
-      n.actualizada_en, n.vistas, n.video != '' AS tiene_video, u.nombre AS autor
-    FROM noticias n LEFT JOIN usuarios u ON u.id = n.autor_id
-    WHERE n.titulo LIKE ? ORDER BY n.publicada_en DESC LIMIT ? OFFSET ?`).all(q, porPagina, (pagina - 1) * porPagina);
-  const total = db.prepare("SELECT COUNT(*) AS n FROM noticias WHERE titulo LIKE ?").get(q).n;
-  res.json({ noticias: filas, total, pagina, paginas: Math.ceil(total / porPagina) });
+  const b = base(c.env);
+  const [filas, total] = await Promise.all([
+    b.todos(`SELECT n.id, n.slug, n.titulo, n.canton, n.imagen, n.estado, n.urgente, n.destacada, n.publicada_en,
+        n.actualizada_en, n.vistas, n.video != '' AS tiene_video, u.nombre AS autor
+      FROM noticias n LEFT JOIN usuarios u ON u.id = n.autor_id
+      WHERE n.titulo LIKE ? ORDER BY n.publicada_en DESC LIMIT ? OFFSET ?`, q, porPagina, (pagina - 1) * porPagina),
+    b.uno("SELECT COUNT(*) AS n FROM noticias WHERE titulo LIKE ?", q),
+  ]);
+  return c.json({ noticias: filas, total: total.n, pagina, paginas: Math.ceil(total.n / porPagina) });
 });
 
-api.get("/noticias/:id", requiere(), (req, res) => {
-  const n = db.prepare("SELECT * FROM noticias WHERE id = ?").get(Number(req.params.id));
-  if (!n) return error(res, 404, "Esa noticia ya no existe.");
-  res.json(salidaNoticia(n));
+api.get("/noticias/:id", requiere(), async (c) => {
+  const n = await base(c.env).uno("SELECT * FROM noticias WHERE id = ?", Number(c.req.param("id")));
+  return n ? c.json(salidaNoticia(n)) : error(c, 404, "Esa noticia ya no existe.");
 });
 
-function guardarDestacada(id, destacada) {
-  if (destacada) db.prepare("UPDATE noticias SET destacada = 0 WHERE id != ?").run(id);
-}
-
-api.post("/noticias", requiere(), (req, res) => {
+api.post("/noticias", requiere(), async (c) => {
   let n;
-  try { n = noticiaDesdeCuerpo(req.body || {}); } catch (e) { return error(res, 400, e.message); }
-  const ahora = ahoraIso();
-  const r = db.prepare(`INSERT INTO noticias (slug, titulo, resumen, contenido, canton, imagen, imagen_texto, video, galeria, enlace_facebook,
-      urgente, destacada, estado, autor_id, publicada_en, actualizada_en)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(slugUnico(n.titulo), n.titulo, n.resumen, n.contenido, n.canton,
-    n.imagen, n.imagen_texto, n.video, n.galeria, n.enlace_facebook, n.urgente, n.destacada, n.estado, req.usuario.id, n.publicada_en, ahora);
-  guardarDestacada(r.lastInsertRowid, n.destacada);
-  res.status(201).json(salidaNoticia(db.prepare("SELECT * FROM noticias WHERE id = ?").get(r.lastInsertRowid)));
+  try { n = noticiaDesdeCuerpo(await cuerpo(c)); } catch (e) { return error(c, 400, e.message); }
+  const b = base(c.env);
+  const r = await b.correr(`INSERT INTO noticias (slug, titulo, resumen, contenido, canton, imagen, imagen_texto, video, galeria, enlace_facebook,
+      urgente, destacada, estado, autor_id, publicada_en, actualizada_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    await slugUnico(c.env, n.titulo), n.titulo, n.resumen, n.contenido, n.canton, n.imagen, n.imagen_texto, n.video, n.galeria,
+    n.enlace_facebook, n.urgente, n.destacada, n.estado, c.get("usuario").id, n.publicada_en, ahoraIso());
+  const id = r.meta.last_row_id;
+  if (n.destacada) await b.correr("UPDATE noticias SET destacada = 0 WHERE id != ?", id);
+  return c.json(salidaNoticia(await b.uno("SELECT * FROM noticias WHERE id = ?", id)), 201);
 });
 
-api.put("/noticias/:id", requiere(), (req, res) => {
-  const id = Number(req.params.id);
-  const actual = db.prepare("SELECT * FROM noticias WHERE id = ?").get(id);
-  if (!actual) return error(res, 404, "Esa noticia ya no existe.");
+api.put("/noticias/:id", requiere(), async (c) => {
+  const id = Number(c.req.param("id"));
+  const b = base(c.env);
+  const actual = await b.uno("SELECT * FROM noticias WHERE id = ?", id);
+  if (!actual) return error(c, 404, "Esa noticia ya no existe.");
   let n;
-  try { n = noticiaDesdeCuerpo(req.body || {}); } catch (e) { return error(res, 400, e.message); }
-  // el enlace solo cambia si la noticia aún es borrador, para no romper enlaces ya compartidos
-  const nuevoSlug = actual.estado === "borrador" && n.titulo !== actual.titulo ? slugUnico(n.titulo, id) : actual.slug;
-  db.prepare(`UPDATE noticias SET slug=?, titulo=?, resumen=?, contenido=?, canton=?, imagen=?, imagen_texto=?, video=?, galeria=?,
-      enlace_facebook=?, urgente=?, destacada=?, estado=?, publicada_en=?, actualizada_en=? WHERE id=?`)
-    .run(nuevoSlug, n.titulo, n.resumen, n.contenido, n.canton, n.imagen, n.imagen_texto, n.video, n.galeria, n.enlace_facebook,
-      n.urgente, n.destacada, n.estado, n.publicada_en, ahoraIso(), id);
-  guardarDestacada(id, n.destacada);
-  res.json(salidaNoticia(db.prepare("SELECT * FROM noticias WHERE id = ?").get(id)));
+  try { n = noticiaDesdeCuerpo(await cuerpo(c)); } catch (e) { return error(c, 400, e.message); }
+  // el enlace solo cambia mientras es borrador, para no romper enlaces ya compartidos
+  const nuevoSlug = actual.estado === "borrador" && n.titulo !== actual.titulo ? await slugUnico(c.env, n.titulo, id) : actual.slug;
+  const sentencias = [[`UPDATE noticias SET slug=?, titulo=?, resumen=?, contenido=?, canton=?, imagen=?, imagen_texto=?, video=?, galeria=?,
+      enlace_facebook=?, urgente=?, destacada=?, estado=?, publicada_en=?, actualizada_en=? WHERE id=?`,
+    nuevoSlug, n.titulo, n.resumen, n.contenido, n.canton, n.imagen, n.imagen_texto, n.video, n.galeria, n.enlace_facebook,
+    n.urgente, n.destacada, n.estado, n.publicada_en, ahoraIso(), id]];
+  if (n.destacada) sentencias.push(["UPDATE noticias SET destacada = 0 WHERE id != ?", id]);
+  await b.lote(sentencias);
+  const quitados = [actual.imagen, actual.video, ...JSON.parse(actual.galeria || "[]")].filter((u) => u && !n.galeria.includes(`"${u}"`) && u !== n.imagen && u !== n.video);
+  c.executionCtx.waitUntil(borrarArchivosSueltos(c, quitados));
+  return c.json(salidaNoticia(await b.uno("SELECT * FROM noticias WHERE id = ?", id)));
 });
 
-api.delete("/noticias/:id", requiere(), (req, res) => {
-  const n = db.prepare("SELECT imagen, video, galeria FROM noticias WHERE id = ?").get(Number(req.params.id));
-  if (!n) return error(res, 404, "Esa noticia ya no existe.");
-  db.prepare("DELETE FROM noticias WHERE id = ?").run(Number(req.params.id));
-  borrarArchivosSueltos([n.imagen, n.video, ...JSON.parse(n.galeria || "[]")]);
-  res.json({ ok: true });
+api.delete("/noticias/:id", requiere(), async (c) => {
+  const id = Number(c.req.param("id"));
+  const b = base(c.env);
+  const n = await b.uno("SELECT imagen, video, galeria FROM noticias WHERE id = ?", id);
+  if (!n) return error(c, 404, "Esa noticia ya no existe.");
+  await b.correr("DELETE FROM noticias WHERE id = ?", id);
+  c.executionCtx.waitUntil(borrarArchivosSueltos(c, [n.imagen, n.video, ...JSON.parse(n.galeria || "[]")]));
+  return c.json({ ok: true });
 });
 
-/** Borra del disco los archivos subidos que ya no usa ninguna noticia ni anuncio */
-function borrarArchivosSueltos(urls) {
-  const enUso = db.prepare(`SELECT 1 FROM noticias WHERE imagen = ?1 OR video = ?1 OR galeria LIKE ?2
-    UNION SELECT 1 FROM anuncios WHERE src = ?1 OR src_movil = ?1 OR poster = ?1 LIMIT 1`);
-  for (const url of new Set(urls.filter((u) => typeof u === "string" && u.startsWith("/subidas/")))) {
-    if (enUso.get(url, `%"${url}"%`)) continue;
-    const archivo = path.resolve(config.subidas, url.slice("/subidas/".length));
-    if (archivo.startsWith(config.subidas + path.sep)) fs.rmSync(archivo, { force: true });
+/* ---------------- Transmisiones en vivo (admin y editor) ---------------- */
+function transmisionDesdeCuerpo(b) {
+  const titulo = texto(b.titulo, 160);
+  const enlace = texto(b.enlace, 500);
+  if (!titulo) throw new Error("Escribe el título de la transmisión.");
+  if (!/^https:\/\/(www\.|m\.|web\.)?(facebook\.com|fb\.watch|youtube\.com|youtu\.be)\//.test(enlace)) {
+    throw new Error("Pega el enlace de la transmisión de Facebook o de YouTube.");
   }
+  const estado = ["programada", "en_vivo", "terminada"].includes(b.estado) ? b.estado : "en_vivo";
+  let programada = "";
+  if (estado === "programada") {
+    const f = new Date(b.programada_para);
+    if (isNaN(f)) throw new Error("Elige la fecha y hora de la transmisión programada.");
+    programada = f.toISOString();
+  }
+  return { titulo, descripcion: texto(b.descripcion, 600), enlace, estado, programada_para: programada };
 }
+
+api.get("/transmisiones", requiere(), async (c) => {
+  return c.json(await base(c.env).todos(`SELECT t.*, u.nombre AS autor FROM transmisiones t LEFT JOIN usuarios u ON u.id = t.autor_id
+    ORDER BY CASE t.estado WHEN 'en_vivo' THEN 0 WHEN 'programada' THEN 1 ELSE 2 END, COALESCE(NULLIF(t.inicio,''), t.programada_para, t.creado_en) DESC LIMIT 100`));
+});
+api.post("/transmisiones", requiere(), async (c) => {
+  let t;
+  try { t = transmisionDesdeCuerpo(await cuerpo(c)); } catch (e) { return error(c, 400, e.message); }
+  const ahora = ahoraIso();
+  const r = await base(c.env).correr(`INSERT INTO transmisiones (titulo, descripcion, enlace, estado, programada_para, inicio, fin, autor_id, creado_en)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, t.titulo, t.descripcion, t.enlace, t.estado, t.programada_para,
+    t.estado === "programada" ? "" : ahora, t.estado === "terminada" ? ahora : "", c.get("usuario").id, ahora);
+  return c.json(await base(c.env).uno("SELECT * FROM transmisiones WHERE id = ?", r.meta.last_row_id), 201);
+});
+api.put("/transmisiones/:id", requiere(), async (c) => {
+  const id = Number(c.req.param("id"));
+  const b = base(c.env);
+  const actual = await b.uno("SELECT * FROM transmisiones WHERE id = ?", id);
+  if (!actual) return error(c, 404, "Esa transmisión ya no existe.");
+  let t;
+  try { t = transmisionDesdeCuerpo(await cuerpo(c)); } catch (e) { return error(c, 400, e.message); }
+  const ahora = ahoraIso();
+  const inicio = t.estado !== "programada" && !actual.inicio ? ahora : actual.inicio;
+  const fin = t.estado === "terminada" ? actual.fin || ahora : "";
+  await b.correr("UPDATE transmisiones SET titulo=?, descripcion=?, enlace=?, estado=?, programada_para=?, inicio=?, fin=? WHERE id=?",
+    t.titulo, t.descripcion, t.enlace, t.estado, t.programada_para, inicio, fin, id);
+  return c.json(await b.uno("SELECT * FROM transmisiones WHERE id = ?", id));
+});
+api.delete("/transmisiones/:id", requiere(), async (c) => {
+  await base(c.env).correr("DELETE FROM transmisiones WHERE id = ?", Number(c.req.param("id")));
+  return c.json({ ok: true });
+});
 
 /* ---------------- Anuncios (solo admin) ---------------- */
 function anuncioDesdeCuerpo(b) {
@@ -199,8 +248,7 @@ function anuncioDesdeCuerpo(b) {
   if (tipo === "html" && !texto(b.html)) throw new Error("Escribe el contenido HTML del anuncio.");
   const fecha = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : "");
   return {
-    espacio: b.espacio, tipo,
-    nombre: texto(b.nombre, 120) || "Anuncio sin nombre",
+    espacio: b.espacio, tipo, nombre: texto(b.nombre, 120) || "Anuncio sin nombre",
     src, src_movil: texto(b.src_movil, 500), poster: texto(b.poster, 500),
     enlace: texto(b.enlace, 500), html: texto(b.html, 20000),
     desde: fecha(b.desde), hasta: fecha(b.hasta),
@@ -209,95 +257,104 @@ function anuncioDesdeCuerpo(b) {
   };
 }
 
-api.get("/espacios", requiere("admin"), (_req, res) => res.json(ESPACIOS));
-api.get("/anuncios", requiere("admin"), (_req, res) => {
-  res.json(db.prepare("SELECT * FROM anuncios ORDER BY espacio, orden, id").all().map((a) => ({ ...a, activo: !!a.activo })));
+api.get("/espacios", requiere("admin"), (c) => c.json(ESPACIOS));
+api.get("/anuncios", requiere("admin"), async (c) => {
+  const filas = await base(c.env).todos("SELECT * FROM anuncios ORDER BY espacio, orden, id");
+  return c.json(filas.map((a) => ({ ...a, activo: !!a.activo })));
 });
-api.post("/anuncios", requiere("admin"), (req, res) => {
+api.post("/anuncios", requiere("admin"), async (c) => {
   let a;
-  try { a = anuncioDesdeCuerpo(req.body || {}); } catch (e) { return error(res, 400, e.message); }
-  const orden = db.prepare("SELECT COALESCE(MAX(orden), -1) + 1 AS o FROM anuncios WHERE espacio = ?").get(a.espacio).o;
-  const r = db.prepare(`INSERT INTO anuncios (espacio, tipo, nombre, src, src_movil, poster, enlace, html, desde, hasta, duracion, activo, orden, creado_en)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(a.espacio, a.tipo, a.nombre, a.src, a.src_movil, a.poster, a.enlace, a.html,
+  try { a = anuncioDesdeCuerpo(await cuerpo(c)); } catch (e) { return error(c, 400, e.message); }
+  const b = base(c.env);
+  const orden = (await b.uno("SELECT COALESCE(MAX(orden), -1) + 1 AS o FROM anuncios WHERE espacio = ?", a.espacio)).o;
+  const r = await b.correr(`INSERT INTO anuncios (espacio, tipo, nombre, src, src_movil, poster, enlace, html, desde, hasta, duracion, activo, orden, creado_en)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, a.espacio, a.tipo, a.nombre, a.src, a.src_movil, a.poster, a.enlace, a.html,
     a.desde, a.hasta, a.duracion, a.activo, orden, ahoraIso());
-  res.status(201).json(db.prepare("SELECT * FROM anuncios WHERE id = ?").get(r.lastInsertRowid));
+  return c.json(await b.uno("SELECT * FROM anuncios WHERE id = ?", r.meta.last_row_id), 201);
 });
-api.put("/anuncios/:id", requiere("admin"), (req, res) => {
+api.patch("/anuncios/orden", requiere("admin"), async (c) => {
+  const d = await cuerpo(c);
+  const ids = Array.isArray(d.ids) ? d.ids.map(Number) : [];
+  if (ids.length) await base(c.env).lote(ids.map((id, i) => ["UPDATE anuncios SET orden = ? WHERE id = ?", i, id]));
+  return c.json({ ok: true });
+});
+api.put("/anuncios/:id", requiere("admin"), async (c) => {
   let a;
-  try { a = anuncioDesdeCuerpo(req.body || {}); } catch (e) { return error(res, 400, e.message); }
-  const r = db.prepare(`UPDATE anuncios SET espacio=?, tipo=?, nombre=?, src=?, src_movil=?, poster=?, enlace=?, html=?, desde=?, hasta=?,
-      duracion=?, activo=? WHERE id=?`).run(a.espacio, a.tipo, a.nombre, a.src, a.src_movil, a.poster, a.enlace, a.html, a.desde, a.hasta,
-    a.duracion, a.activo, Number(req.params.id));
-  if (!r.changes) return error(res, 404, "Ese anuncio ya no existe.");
-  res.json(db.prepare("SELECT * FROM anuncios WHERE id = ?").get(Number(req.params.id)));
+  try { a = anuncioDesdeCuerpo(await cuerpo(c)); } catch (e) { return error(c, 400, e.message); }
+  const id = Number(c.req.param("id"));
+  const b = base(c.env);
+  const previo = await b.uno("SELECT src, src_movil, poster FROM anuncios WHERE id = ?", id);
+  if (!previo) return error(c, 404, "Ese anuncio ya no existe.");
+  await b.correr(`UPDATE anuncios SET espacio=?, tipo=?, nombre=?, src=?, src_movil=?, poster=?, enlace=?, html=?, desde=?, hasta=?, duracion=?, activo=?
+    WHERE id=?`, a.espacio, a.tipo, a.nombre, a.src, a.src_movil, a.poster, a.enlace, a.html, a.desde, a.hasta, a.duracion, a.activo, id);
+  c.executionCtx.waitUntil(borrarArchivosSueltos(c, [previo.src, previo.src_movil, previo.poster]));
+  return c.json(await b.uno("SELECT * FROM anuncios WHERE id = ?", id));
 });
-api.patch("/anuncios/orden", requiere("admin"), (req, res) => {
-  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : [];
-  const upd = db.prepare("UPDATE anuncios SET orden = ? WHERE id = ?");
-  ids.forEach((id, i) => upd.run(i, id));
-  res.json({ ok: true });
-});
-api.delete("/anuncios/:id", requiere("admin"), (req, res) => {
-  const a = db.prepare("SELECT src, src_movil, poster FROM anuncios WHERE id = ?").get(Number(req.params.id));
-  if (!a) return error(res, 404, "Ese anuncio ya no existe.");
-  db.prepare("DELETE FROM anuncios WHERE id = ?").run(Number(req.params.id));
-  db.prepare("DELETE FROM eventos_anuncio WHERE anuncio_id = ?").run(Number(req.params.id));
-  borrarArchivosSueltos([a.src, a.src_movil, a.poster]);
-  res.json({ ok: true });
+api.delete("/anuncios/:id", requiere("admin"), async (c) => {
+  const id = Number(c.req.param("id"));
+  const b = base(c.env);
+  const a = await b.uno("SELECT src, src_movil, poster FROM anuncios WHERE id = ?", id);
+  if (!a) return error(c, 404, "Ese anuncio ya no existe.");
+  await b.lote([["DELETE FROM anuncios WHERE id = ?", id], ["DELETE FROM eventos_anuncio WHERE anuncio_id = ?", id]]);
+  c.executionCtx.waitUntil(borrarArchivosSueltos(c, [a.src, a.src_movil, a.poster]));
+  return c.json({ ok: true });
 });
 
-/* ---------------- Estadísticas (solo admin) ---------------- */
-api.get("/estadisticas", requiere("admin"), (req, res) => res.json(resumen(req.query.dias)));
+/* ---------------- Estadísticas, usuarios y ajustes (solo admin) ---------------- */
+api.get("/estadisticas", requiere("admin"), async (c) => c.json(await resumen(c.env, c.req.query("dias"))));
 
-/* ---------------- Usuarios y ajustes (solo admin) ---------------- */
-api.get("/usuarios", requiere("admin"), (_req, res) => {
-  res.json(db.prepare("SELECT id, usuario, nombre, rol, creado_en FROM usuarios ORDER BY id").all());
-});
-api.post("/usuarios", requiere("admin"), (req, res) => {
+const COLUMNAS_USUARIO = "id, usuario, nombre, rol, creado_en";
+api.get("/usuarios", requiere("admin"), async (c) => c.json(await base(c.env).todos(`SELECT ${COLUMNAS_USUARIO} FROM usuarios ORDER BY id`)));
+api.post("/usuarios", requiere("admin"), async (c) => {
+  const d = await cuerpo(c);
   try {
-    const id = crearUsuario({ usuario: texto(req.body?.usuario, 30), nombre: texto(req.body?.nombre, 80), rol: req.body?.rol, clave: req.body?.clave });
-    res.status(201).json(db.prepare("SELECT id, usuario, nombre, rol, creado_en FROM usuarios WHERE id = ?").get(id));
+    const id = await crearUsuario(c.env, { usuario: texto(d.usuario, 30), nombre: texto(d.nombre, 80), rol: d.rol, clave: d.clave });
+    return c.json(await base(c.env).uno(`SELECT ${COLUMNAS_USUARIO} FROM usuarios WHERE id = ?`, id), 201);
   } catch (e) {
-    error(res, 400, /UNIQUE/.test(e.message) ? "Ya existe un usuario con ese nombre." : e.message);
+    return error(c, 400, /UNIQUE/.test(e.message) ? "Ya existe un usuario con ese nombre." : e.message);
   }
 });
-api.put("/usuarios/:id", requiere("admin"), (req, res) => {
-  const id = Number(req.params.id);
-  const u = db.prepare("SELECT * FROM usuarios WHERE id = ?").get(id);
-  if (!u) return error(res, 404, "Ese usuario ya no existe.");
-  const rol = ["admin", "editor"].includes(req.body?.rol) ? req.body.rol : u.rol;
-  if (id === req.usuario.id && rol !== "admin") return error(res, 400, "No puedes quitarte el rol de administrador a ti mismo.");
-  db.prepare("UPDATE usuarios SET nombre = ?, rol = ? WHERE id = ?").run(texto(req.body?.nombre, 80) || u.nombre, rol, id);
-  if (req.body?.clave) {
-    try { validarClave(req.body.clave); } catch (e) { return error(res, 400, e.message); }
-    db.prepare("UPDATE usuarios SET clave = ? WHERE id = ?").run(hashClave(req.body.clave), id);
-    db.prepare("DELETE FROM sesiones WHERE usuario_id = ?").run(id);
+api.put("/usuarios/:id", requiere("admin"), async (c) => {
+  const id = Number(c.req.param("id"));
+  const d = await cuerpo(c);
+  const b = base(c.env);
+  const u = await b.uno("SELECT * FROM usuarios WHERE id = ?", id);
+  if (!u) return error(c, 404, "Ese usuario ya no existe.");
+  const rol = ["admin", "editor"].includes(d.rol) ? d.rol : u.rol;
+  if (id === c.get("usuario").id && rol !== "admin") return error(c, 400, "No puedes quitarte el rol de administrador a ti mismo.");
+  const sentencias = [["UPDATE usuarios SET nombre = ?, rol = ? WHERE id = ?", texto(d.nombre, 80) || u.nombre, rol, id]];
+  if (d.clave) {
+    try { validarClave(d.clave); } catch (e) { return error(c, 400, e.message); }
+    sentencias.push(["UPDATE usuarios SET clave = ? WHERE id = ?", await hashClave(d.clave), id], ["DELETE FROM sesiones WHERE usuario_id = ?", id]);
   }
-  res.json(db.prepare("SELECT id, usuario, nombre, rol, creado_en FROM usuarios WHERE id = ?").get(id));
+  await b.lote(sentencias);
+  return c.json(await b.uno(`SELECT ${COLUMNAS_USUARIO} FROM usuarios WHERE id = ?`, id));
 });
-api.delete("/usuarios/:id", requiere("admin"), (req, res) => {
-  const id = Number(req.params.id);
-  if (id === req.usuario.id) return error(res, 400, "No puedes borrar tu propio usuario.");
-  db.prepare("DELETE FROM usuarios WHERE id = ?").run(id);
-  res.json({ ok: true });
+api.delete("/usuarios/:id", requiere("admin"), async (c) => {
+  const id = Number(c.req.param("id"));
+  if (id === c.get("usuario").id) return error(c, 400, "No puedes borrar tu propio usuario.");
+  await base(c.env).correr("DELETE FROM usuarios WHERE id = ?", id);
+  return c.json({ ok: true });
 });
 
-api.get("/ajustes", requiere("admin"), (_req, res) => {
-  res.json({ whatsapp: ajuste("whatsapp"), seguidores: ajuste("seguidores", config.seguidores) });
+api.get("/ajustes", requiere("admin"), async (c) => {
+  const a = await ajustes(c.env);
+  return c.json({ whatsapp: a.whatsapp || "", seguidores: a.seguidores || config.seguidores });
 });
-api.put("/ajustes", requiere("admin"), (req, res) => {
-  guardarAjuste("whatsapp", texto(req.body?.whatsapp, 20).replace(/[^\d]/g, ""));
-  guardarAjuste("seguidores", texto(req.body?.seguidores, 12) || config.seguidores);
-  res.json({ ok: true });
+api.put("/ajustes", requiere("admin"), async (c) => {
+  const d = await cuerpo(c);
+  await guardarAjuste(c.env, "whatsapp", texto(d.whatsapp, 20).replace(/[^\d]/g, ""));
+  await guardarAjuste(c.env, "seguidores", texto(d.seguidores, 12) || config.seguidores);
+  return c.json({ ok: true });
 });
 
 /* ---------------- Público: vistas y clics de anuncios ---------------- */
-api.post("/evento", express.text({ type: "*/*", limit: "2kb" }), (req, res) => {
+api.post("/evento", async (c) => {
   try {
-    const datos = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    registrarEventoAnuncio(req, Number(datos.anuncio), datos.tipo);
+    const datos = JSON.parse(await c.req.text());
+    await registrarEventoAnuncio(c, Number(datos.anuncio), datos.tipo);
   } catch {}
-  res.status(204).end();
+  return c.body(null, 204);
 });
 
-api.use((_req, res) => error(res, 404, "Esa dirección no existe."));
+api.all("*", (c) => error(c, 404, "Esa dirección no existe."));

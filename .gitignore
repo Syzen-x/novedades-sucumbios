@@ -4,3 +4,6 @@ node_modules/
 data/
 .env
 .claude/settings.local.json
+.dev.vars
+.wrangler/
+USUARIOS-PRUEBA.txt

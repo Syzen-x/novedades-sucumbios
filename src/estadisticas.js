@@ -1,23 +1,18 @@
-import crypto from "node:crypto";
-import { db } from "./db.js";
-import { config } from "./config.js";
+import { base } from "./db.js";
 
 const BOTS = /bot|crawl|spider|slurp|facebookexternalhit|whatsapp|telegrambot|preview|headless|lighthouse|curl|wget|python|axios|monitor/i;
 
-export function esBot(req) {
-  return BOTS.test(req.headers["user-agent"] || "");
-}
+export const esBot = (c) => BOTS.test(c.req.header("user-agent") || "");
 
 export function hoy() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Guayaquil" });
 }
 
-function origen(req) {
-  const ref = req.headers.referer || "";
+function origen(c) {
+  const ref = c.req.header("referer") || "";
   let host = "";
   try { host = new URL(ref).hostname.replace(/^www\./, ""); } catch { return "Directo"; }
-  const propio = new URL(config.sitio).hostname.replace(/^www\./, "");
-  if (!host || host === propio || host === (req.headers.host || "").split(":")[0]) return "Directo";
+  if (!host || host === new URL(c.req.url).hostname.replace(/^www\./, "")) return "Directo";
   if (/facebook\.com$|fb\.com$|fb\.me$/.test(host)) return "Facebook";
   if (/google\./.test(host)) return "Google";
   if (/t\.me$|telegram/.test(host)) return "Telegram";
@@ -28,59 +23,66 @@ function origen(req) {
   return host;
 }
 
-const insVisita = db.prepare("INSERT INTO visitas (dia, ruta, noticia_id, visitante, dispositivo, origen) VALUES (?, ?, ?, ?, ?, ?)");
-const sumarVista = db.prepare("UPDATE noticias SET vistas = vistas + 1 WHERE id = ?");
-
-export function registrarVisita(req, ruta, noticiaId = null) {
-  if (req.usuario || esBot(req) || req.method !== "GET") return;
-  const dia = hoy();
-  const ua = req.headers["user-agent"] || "";
-  const visitante = crypto.createHash("sha256").update(`${config.secreto}|${dia}|${req.ip}|${ua}`).digest("hex").slice(0, 16);
-  const dispositivo = /mobi|android|iphone/i.test(ua) ? "Celular" : /ipad|tablet/i.test(ua) ? "Tablet" : "Computadora";
-  insVisita.run(dia, ruta, noticiaId, visitante, dispositivo, origen(req));
-  if (noticiaId) sumarVista.run(noticiaId);
+async function huella(texto) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texto));
+  return [...new Uint8Array(buf)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-const insEvento = db.prepare("INSERT INTO eventos_anuncio (dia, anuncio_id, tipo) VALUES (?, ?, ?)");
-export function registrarEventoAnuncio(req, anuncioId, tipo) {
-  if (req.usuario || esBot(req)) return;
+/** Registra la visita sin demorar la respuesta (no guarda la IP, solo una huella diaria anónima) */
+export function registrarVisita(c, ruta, noticiaId = null) {
+  if (c.get("usuario") || esBot(c) || c.req.method !== "GET") return;
+  const tarea = (async () => {
+    const dia = hoy();
+    const ua = c.req.header("user-agent") || "";
+    const visitante = await huella(`${c.env.SECRETO}|${dia}|${c.req.header("cf-connecting-ip") || ""}|${ua}`);
+    const dispositivo = /mobi|android|iphone/i.test(ua) ? "Celular" : /ipad|tablet/i.test(ua) ? "Tablet" : "Computadora";
+    const sentencias = [["INSERT INTO visitas (dia, ruta, noticia_id, visitante, dispositivo, origen) VALUES (?, ?, ?, ?, ?, ?)",
+      dia, ruta, noticiaId, visitante, dispositivo, origen(c)]];
+    if (noticiaId) sentencias.push(["UPDATE noticias SET vistas = vistas + 1 WHERE id = ?", noticiaId]);
+    await base(c.env).lote(sentencias);
+  })().catch((e) => console.error("visita", e.message));
+  c.executionCtx.waitUntil(tarea);
+}
+
+export async function registrarEventoAnuncio(c, anuncioId, tipo) {
+  if (c.get("usuario") || esBot(c)) return;
   if (!["vista", "clic"].includes(tipo) || !Number.isInteger(anuncioId)) return;
-  insEvento.run(hoy(), anuncioId, tipo);
+  await base(c.env).correr("INSERT INTO eventos_anuncio (dia, anuncio_id, tipo) VALUES (?, ?, ?)", hoy(), anuncioId, tipo);
 }
 
-export function resumen(dias = 30) {
+const restarDias = (dia, n) => new Date(Date.parse(dia) - n * 864e5).toISOString().slice(0, 10);
+
+export async function resumen(env, dias = 30) {
   dias = Math.min(Math.max(Number(dias) || 30, 1), 365);
+  const b = base(env);
   const fin = hoy();
-  const inicio = new Date(Date.parse(fin) - (dias - 1) * 864e5).toISOString().slice(0, 10);
-  const inicioPrevio = new Date(Date.parse(inicio) - dias * 864e5).toISOString().slice(0, 10);
+  const inicio = restarDias(fin, dias - 1);
+  const inicioPrevio = restarDias(inicio, dias);
+  const finPrevio = restarDias(inicio, 1);
+  const totales = "SELECT COUNT(*) AS visitas, COUNT(DISTINCT visitante || dia) AS visitantes FROM visitas WHERE dia BETWEEN ? AND ?";
 
-  const totales = (desde, hasta) => db.prepare(`SELECT COUNT(*) AS visitas, COUNT(DISTINCT visitante || dia) AS visitantes
-    FROM visitas WHERE dia BETWEEN ? AND ?`).get(desde, hasta);
-  const actual = totales(inicio, fin);
-  const previo = totales(inicioPrevio, new Date(Date.parse(inicio) - 864e5).toISOString().slice(0, 10));
+  const [actual, previo, porDia, topNoticias, origenes, dispositivos, anuncios, publicadas] = await Promise.all([
+    b.uno(totales, inicio, fin),
+    b.uno(totales, inicioPrevio, finPrevio),
+    b.todos("SELECT dia, COUNT(*) AS visitas, COUNT(DISTINCT visitante) AS visitantes FROM visitas WHERE dia BETWEEN ? AND ? GROUP BY dia", inicio, fin),
+    b.todos(`SELECT n.id, n.titulo, n.slug, n.canton, COUNT(v.id) AS visitas FROM visitas v JOIN noticias n ON n.id = v.noticia_id
+      WHERE v.dia BETWEEN ? AND ? GROUP BY n.id ORDER BY visitas DESC LIMIT 10`, inicio, fin),
+    b.todos("SELECT origen AS nombre, COUNT(*) AS visitas FROM visitas WHERE dia BETWEEN ? AND ? GROUP BY origen ORDER BY visitas DESC LIMIT 8", inicio, fin),
+    b.todos("SELECT dispositivo AS nombre, COUNT(*) AS visitas FROM visitas WHERE dia BETWEEN ? AND ? GROUP BY dispositivo ORDER BY visitas DESC", inicio, fin),
+    b.todos(`SELECT a.id, a.nombre, a.espacio, a.tipo, a.activo, SUM(e.tipo = 'vista') AS vistas, SUM(e.tipo = 'clic') AS clics
+      FROM anuncios a LEFT JOIN eventos_anuncio e ON e.anuncio_id = a.id AND e.dia BETWEEN ? AND ? GROUP BY a.id ORDER BY vistas DESC`, inicio, fin),
+    b.uno("SELECT COUNT(*) AS n FROM noticias WHERE estado = 'publicada' AND substr(publicada_en,1,10) BETWEEN ? AND ?", inicio, fin),
+  ]);
 
-  const porDia = db.prepare(`SELECT dia, COUNT(*) AS visitas, COUNT(DISTINCT visitante) AS visitantes
-    FROM visitas WHERE dia BETWEEN ? AND ? GROUP BY dia`).all(inicio, fin);
   const mapa = Object.fromEntries(porDia.map((d) => [d.dia, d]));
   const serie = [];
   for (let i = 0; i < dias; i++) {
-    const d = new Date(Date.parse(inicio) + i * 864e5).toISOString().slice(0, 10);
+    const d = restarDias(inicio, -i);
     serie.push({ dia: d, visitas: mapa[d]?.visitas || 0, visitantes: mapa[d]?.visitantes || 0 });
   }
-
-  const topNoticias = db.prepare(`SELECT n.id, n.titulo, n.slug, n.canton, COUNT(v.id) AS visitas
-    FROM visitas v JOIN noticias n ON n.id = v.noticia_id WHERE v.dia BETWEEN ? AND ?
-    GROUP BY n.id ORDER BY visitas DESC LIMIT 10`).all(inicio, fin);
-  const origenes = db.prepare(`SELECT origen AS nombre, COUNT(*) AS visitas FROM visitas WHERE dia BETWEEN ? AND ?
-    GROUP BY origen ORDER BY visitas DESC LIMIT 8`).all(inicio, fin);
-  const dispositivos = db.prepare(`SELECT dispositivo AS nombre, COUNT(*) AS visitas FROM visitas WHERE dia BETWEEN ? AND ?
-    GROUP BY dispositivo ORDER BY visitas DESC`).all(inicio, fin);
-  const anuncios = db.prepare(`SELECT a.id, a.nombre, a.espacio, a.tipo, a.activo,
-      SUM(e.tipo = 'vista') AS vistas, SUM(e.tipo = 'clic') AS clics
-    FROM anuncios a LEFT JOIN eventos_anuncio e ON e.anuncio_id = a.id AND e.dia BETWEEN ? AND ?
-    GROUP BY a.id ORDER BY vistas DESC`).all(inicio, fin)
-    .map((a) => ({ ...a, vistas: a.vistas || 0, clics: a.clics || 0 }));
-  const publicadas = db.prepare("SELECT COUNT(*) AS n FROM noticias WHERE estado = 'publicada' AND substr(publicada_en,1,10) BETWEEN ? AND ?").get(inicio, fin).n;
-
-  return { dias, inicio, fin, actual, previo, serie, topNoticias, origenes, dispositivos, anuncios, publicadas };
+  return {
+    dias, inicio, fin, actual, previo, serie, topNoticias, origenes, dispositivos,
+    anuncios: anuncios.map((a) => ({ ...a, vistas: a.vistas || 0, clics: a.clics || 0 })),
+    publicadas: publicadas.n,
+  };
 }

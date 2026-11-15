@@ -305,3 +305,12 @@ tbody tr:hover { background: rgba(255, 255, 255, .02); }
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* ---------- En vivo ---------- */
+.vivo-activa { border-color: rgba(229, 56, 59, .55); }
+.vivo-estado { display: inline-flex; align-items: center; gap: 8px; color: #FF8A8C; font-weight: 800; margin: 0 0 6px; }
+.punto-vivo { width: 10px; height: 10px; border-radius: 50%; background: #E5383B; animation: latido-panel 1.4s ease-in-out infinite; }
+@keyframes latido-panel { 0%, 100% { box-shadow: 0 0 0 0 rgba(229, 56, 59, .7); } 50% { box-shadow: 0 0 0 7px rgba(229, 56, 59, 0); } }
+.vivo-activa h2 { margin: 0 0 4px; }
+.vivo-activa .fila-acciones { margin: 14px 0 8px; }
+@media (prefers-reduced-motion: reduce) { .punto-vivo { animation: none; } }

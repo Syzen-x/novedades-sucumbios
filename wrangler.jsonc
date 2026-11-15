@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "novedades-sucumbios",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "novedadessucumbios.com", "custom_domain": true },
+    { "pattern": "www.novedadessucumbios.com", "custom_domain": true }
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "novedades-sucumbios",
+      "database_id": "76573f17-8bd9-45b2-b6eb-6e973e1e5375",
+      "migrations_dir": "migraciones"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "novedades-sucumbios-media" }
+  ],
+  "vars": {
+    "SITIO_URL": "https://novedadessucumbios.com"
+  },
+  "observability": { "enabled": true }
+}

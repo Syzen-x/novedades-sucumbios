@@ -83,14 +83,13 @@
     });
   }
 
-  /** Sube un archivo y reporta el avance (0 a 100) */
-  function subir(archivo, alAvanzar) {
+  /** Envía un trozo de datos con XHR (para poder mostrar el avance) */
+  function enviar(metodo, url, datos, tipo, alAvanzar) {
     return new Promise(function (ok, falla) {
       var xhr = new XMLHttpRequest();
-      var datos = new FormData();
-      datos.append("archivo", archivo);
-      xhr.open("POST", "/api/subir");
-      xhr.upload.onprogress = function (e) { if (e.lengthComputable && alAvanzar) alAvanzar(Math.round(e.loaded / e.total * 100)); };
+      xhr.open(metodo, url);
+      if (tipo) xhr.setRequestHeader("Content-Type", tipo);
+      xhr.upload.onprogress = function (e) { if (e.lengthComputable && alAvanzar) alAvanzar(e.loaded / e.total); };
       xhr.onload = function () {
         var r = null;
         try { r = JSON.parse(xhr.responseText); } catch (e) {}
@@ -100,6 +99,47 @@
       };
       xhr.onerror = function () { falla(new Error("Se cortó la conexión mientras se subía el archivo.")); };
       xhr.send(datos);
+    });
+  }
+
+  /** Las fotos se achican en el navegador (máx. 2000 px, WEBP) para que carguen rápido */
+  function optimizarImagen(archivo) {
+    if (!/^image\/(jpeg|png|webp)$/.test(archivo.type)) return Promise.resolve(archivo);
+    return new Promise(function (ok) {
+      var url = URL.createObjectURL(archivo);
+      var img = new Image();
+      img.onload = function () {
+        var escala = Math.min(1, 2000 / img.naturalWidth);
+        var lienzo = document.createElement("canvas");
+        lienzo.width = Math.round(img.naturalWidth * escala);
+        lienzo.height = Math.round(img.naturalHeight * escala);
+        lienzo.getContext("2d").drawImage(img, 0, 0, lienzo.width, lienzo.height);
+        URL.revokeObjectURL(url);
+        lienzo.toBlob(function (b) { ok(b && b.size < archivo.size ? b : archivo); }, "image/webp", 0.84);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); ok(archivo); };
+      img.src = url;
+    });
+  }
+
+  var PARTE = 50 * 1024 * 1024;
+  /** Sube un archivo y reporta el avance (0 a 100). Los videos grandes se suben por partes. */
+  function subir(archivo, alAvanzar) {
+    var avance = function (f) { if (alAvanzar) alAvanzar(Math.min(100, Math.round(f * 100))); };
+    return optimizarImagen(archivo).then(function (a) {
+      if (a.size <= 90 * 1024 * 1024) return enviar("POST", "/api/subir", a, a.type, avance);
+      if (!/^video\//.test(a.type)) throw new Error("La imagen pesa demasiado. Usa una de menos de 90 MB.");
+      return api("POST", "/subir/iniciar", { tipo: a.type, tamano: a.size }).then(function (s) {
+        var total = Math.ceil(a.size / PARTE), partes = [];
+        function siguiente(i) {
+          if (i > total) return api("POST", "/subir/completar", { clave: s.clave, id: s.id, partes: partes });
+          var trozo = a.slice((i - 1) * PARTE, Math.min(a.size, i * PARTE));
+          var url = "/api/subir/parte?clave=" + encodeURIComponent(s.clave) + "&id=" + encodeURIComponent(s.id) + "&n=" + i;
+          return enviar("PUT", url, trozo, "application/octet-stream", function (f) { avance((i - 1 + f) / total); })
+            .then(function (p) { partes.push(p); return siguiente(i + 1); });
+        }
+        return siguiente(1);
+      });
     });
   }
 
@@ -151,6 +191,7 @@
     cuenta: '<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
     web: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
     menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    vivo: '<circle cx="12" cy="12" r="2.5"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2"/>',
   };
   function icono(n) {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONOS[n] + "</svg>";
@@ -209,6 +250,7 @@
   var SECCIONES = [
     { ruta: "resumen", nombre: "Resumen", icono: "resumen", rol: "admin" },
     { ruta: "noticias", nombre: "Noticias", icono: "noticias" },
+    { ruta: "vivo", nombre: "En vivo", icono: "vivo" },
     { ruta: "anuncios", nombre: "Anuncios", icono: "anuncios", rol: "admin" },
     { ruta: "usuarios", nombre: "Usuarios", icono: "usuarios", rol: "admin" },
     { ruta: "ajustes", nombre: "Ajustes", icono: "ajustes", rol: "admin" },
@@ -285,7 +327,7 @@
     var vista = $("#vista");
     vista.innerHTML = '<p class="cargando">Cargando…</p>';
     document.title = seccion.nombre + " · Panel Novedades Sucumbíos";
-    var vistas = { resumen: vistaResumen, noticias: vistaNoticias, anuncios: vistaAnuncios, usuarios: vistaUsuarios, ajustes: vistaAjustes, cuenta: vistaCuenta };
+    var vistas = { resumen: vistaResumen, noticias: vistaNoticias, vivo: vistaVivo, anuncios: vistaAnuncios, usuarios: vistaUsuarios, ajustes: vistaAjustes, cuenta: vistaCuenta };
     vistas[seccion.ruta](vista, partes.slice(1));
     window.scrollTo(0, 0);
   }
@@ -464,7 +506,7 @@
       cambiar: function (u) { video.url = u; marcarCambio(); },
       aceptar: "video/mp4,video/webm,video/quicktime",
       textoBoton: "Subir video",
-      textoVacio: "<strong>Subir video</strong>MP4 o WEBM, hasta 300 MB.",
+      textoVacio: "<strong>Subir video</strong>MP4 o WEBM, hasta 1 GB.",
       previa: previaVideo,
       permitirEnlace: true,
       textoEnlace: "o pega un enlace de YouTube o Facebook",
@@ -774,7 +816,7 @@
             valor: function () { return archivos[clave]; },
             cambiar: function (u) { archivos[clave] = u; if (revisarMedida) revisarProporcion(); },
             aceptar: aceptar,
-            textoVacio: "<strong>Subir archivo</strong>" + (aceptar.indexOf("video") === 0 ? "MP4 o WEBM, hasta 300 MB." : "JPG, PNG, WEBP o GIF."),
+            textoVacio: "<strong>Subir archivo</strong>" + (aceptar.indexOf("video") === 0 ? "MP4 o WEBM, hasta 1 GB." : "JPG, PNG, WEBP o GIF."),
             previa: function (u) { return /^video/.test(aceptar) || esVideoArchivo(u) ? '<video src="' + esc(u) + '" controls muted preload="metadata"></video>' : '<img src="' + esc(u) + '" alt="">'; },
             permitirEnlace: true,
             textoEnlace: "o pega el enlace del archivo",
@@ -1090,6 +1132,114 @@
           api(nuevo ? "POST" : "PUT", nuevo ? "/usuarios" : "/usuarios/" + u.id, cuerpo).then(function () {
             dialogo.close();
             aviso(nuevo ? "Usuario creado." : "Usuario actualizado.");
+            alGuardar();
+          }).catch(fallo);
+        });
+      });
+  }
+
+  /* ================= En vivo ================= */
+  var ESTADO_VIVO = { en_vivo: "En vivo ahora", programada: "Programada", terminada: "Terminada" };
+
+  function vistaVivo(vista) {
+    vista.innerHTML =
+      '<div class="cabeza"><div><h1>En vivo</h1><p>Cuando transmitas en Facebook o YouTube, pega aquí el enlace: la transmisión aparece en la portada, en todas las páginas y en /en-vivo.</p></div>' +
+      '<div class="cabeza-acciones"><a class="btn" href="/en-vivo" target="_blank" rel="noopener">Ver la página en vivo</a>' +
+      '<button class="btn btn--principal" type="button" id="nueva-transmision">Empezar transmisión</button></div></div>' +
+      '<div id="transmisiones" class="pila"><p class="cargando">Cargando…</p></div>';
+
+    function cargar() {
+      api("GET", "/transmisiones").then(function (lista) {
+        var activa = lista.filter(function (t) { return t.estado === "en_vivo"; })[0];
+        var cont = $("#transmisiones");
+        cont.innerHTML =
+          (activa
+            ? '<section class="tarjeta vivo-activa"><p class="vivo-estado"><span class="punto-vivo" aria-hidden="true"></span>Se está mostrando en la web</p>' +
+              "<h2>" + esc(activa.titulo) + "</h2>" +
+              '<p class="sub">Empezó ' + esc(fechaCorta(activa.inicio)) + " · " + '<a href="' + esc(activa.enlace) + '" target="_blank" rel="noopener">Abrir en Facebook/YouTube</a></p>' +
+              '<div class="fila-acciones"><button class="btn btn--peligro" type="button" data-terminar="' + activa.id + '">Terminar transmisión</button>' +
+              '<button class="btn" type="button" data-editar="' + activa.id + '">Editar</button></div>' +
+              '<small class="ayuda">Al terminarla deja de mostrarse como «en vivo» y queda guardada en «Transmisiones anteriores».</small></section>'
+            : '<section class="tarjeta"><div class="vacio" style="padding:12px 0"><strong>No hay ninguna transmisión en vivo</strong>Cuando empieces a transmitir en Facebook, pulsa «Empezar transmisión» y pega el enlace del video en vivo.</div></section>') +
+          '<section class="tarjeta"><h2>Historial</h2>' +
+          (lista.length
+            ? '<div class="tabla-envoltura"><table><thead><tr><th>Transmisión</th><th>Estado</th><th>Fecha</th><th></th></tr></thead><tbody>' +
+              lista.map(function (t) {
+                var fecha = t.estado === "programada" ? t.programada_para : t.inicio || t.creado_en;
+                return "<tr><td>" + esc(t.titulo) + (t.autor ? '<br><small class="sub">' + esc(t.autor) + "</small>" : "") + "</td>" +
+                  '<td><span class="insignia' + (t.estado === "en_vivo" ? " insignia--urgente" : t.estado === "programada" ? " insignia--destacada" : "") + '">' + ESTADO_VIVO[t.estado] + "</span></td>" +
+                  "<td>" + esc(fechaCorta(fecha)) + '</td><td class="num"><div class="fila-acciones" style="justify-content:flex-end">' +
+                  (t.estado === "programada" ? '<button class="btn btn--chico btn--principal" type="button" data-iniciar="' + t.id + '">Iniciar ahora</button>' : "") +
+                  '<button class="btn btn--chico" type="button" data-editar="' + t.id + '">Editar</button>' +
+                  '<button class="btn btn--chico btn--peligro" type="button" data-borrar="' + t.id + '">Borrar</button></div></td></tr>';
+              }).join("") + "</tbody></table></div>"
+            : '<p class="sub">Todavía no hay transmisiones registradas.</p>') +
+          "</section>";
+
+        cont.onclick = function (e) {
+          var b = e.target.closest("button");
+          if (!b) return;
+          var id = Number(b.dataset.terminar || b.dataset.editar || b.dataset.borrar || b.dataset.iniciar);
+          var t = lista.filter(function (x) { return x.id === id; })[0];
+          if (!t) return;
+          var cambiar = function (estado, mensaje) {
+            api("PUT", "/transmisiones/" + t.id, { titulo: t.titulo, descripcion: t.descripcion, enlace: t.enlace, estado: estado, programada_para: t.programada_para })
+              .then(function () { aviso(mensaje); cargar(); }).catch(fallo);
+          };
+          if (b.dataset.terminar) {
+            confirmar("¿Terminar la transmisión?", "«" + t.titulo + "» dejará de aparecer como en vivo en la web.", "Terminar").then(function (si) {
+              if (si) cambiar("terminada", "Transmisión terminada. Quedó en el historial.");
+            });
+          }
+          if (b.dataset.iniciar) {
+            if (activa) { aviso("Ya hay una transmisión en vivo. Termínala primero.", "error"); return; }
+            cambiar("en_vivo", "La transmisión ya se muestra en la web.");
+          }
+          if (b.dataset.editar) formularioTransmision(t, cargar);
+          if (b.dataset.borrar) {
+            confirmar("¿Borrar esta transmisión?", "«" + t.titulo + "» se quitará del historial de la web.", "Borrar").then(function (si) {
+              if (si) api("DELETE", "/transmisiones/" + t.id).then(function () { aviso("Transmisión borrada."); cargar(); }).catch(fallo);
+            });
+          }
+        };
+        $("#nueva-transmision").onclick = function () {
+          if (activa) { aviso("Ya hay una transmisión en vivo. Termínala antes de empezar otra.", "error"); return; }
+          formularioTransmision(null, cargar);
+        };
+      }).catch(function (e) { $("#transmisiones").innerHTML = '<div class="vacio"><strong>No se pudo cargar</strong>' + esc(e.message) + "</div>"; });
+    }
+    cargar();
+  }
+
+  function formularioTransmision(t, alGuardar) {
+    var nueva = !t;
+    t = t || { titulo: "", descripcion: "", enlace: "", estado: "en_vivo", programada_para: "" };
+    abrirDialogo(
+      '<form method="dialog" id="form-vivo" novalidate><h2>' + (nueva ? "Empezar transmisión" : "Editar transmisión") + "</h2>" +
+      '<label class="campo"><span>Título</span><input type="text" name="titulo" maxlength="160" value="' + esc(t.titulo) + '" placeholder="Ej.: Motocaravana por las calles de Nueva Loja" required></label>' +
+      '<label class="campo"><span>Enlace del video en vivo</span><input type="url" name="enlace" value="' + esc(t.enlace) + '" placeholder="https://www.facebook.com/novedadessucumbios/videos/…" required>' +
+      '<small class="ayuda">En Facebook: abre la transmisión, toca «Compartir» → «Copiar enlace». Debe ser pública. También sirve un enlace de YouTube.</small></label>' +
+      '<label class="campo"><span>Descripción (opcional)</span><textarea name="descripcion" rows="2" maxlength="600">' + esc(t.descripcion) + "</textarea></label>" +
+      '<label class="campo"><span>Estado</span><select name="estado">' +
+      Object.keys(ESTADO_VIVO).map(function (k) { return '<option value="' + k + '"' + (t.estado === k ? " selected" : "") + ">" + ESTADO_VIVO[k] + "</option>"; }).join("") +
+      "</select></label>" +
+      '<label class="campo" id="campo-programada"><span>Fecha y hora (hora de Ecuador)</span><input type="datetime-local" name="programada_para" value="' + (t.programada_para ? aLocalEcuador(t.programada_para) : "") + '"></label>' +
+      '<div class="dialogo-pie"><button class="btn" type="button" data-cerrar>Cancelar</button><button class="btn btn--principal" type="submit">' + (nueva ? "Mostrar en la web" : "Guardar cambios") + "</button></div></form>",
+      function (d) {
+        var form = $("#form-vivo", d);
+        var mostrarFecha = function () { $("#campo-programada", d).hidden = form.estado.value !== "programada"; };
+        form.estado.addEventListener("change", mostrarFecha);
+        mostrarFecha();
+        form.titulo.focus();
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var cuerpo = {
+            titulo: form.titulo.value.trim(), enlace: form.enlace.value.trim(), descripcion: form.descripcion.value.trim(),
+            estado: form.estado.value, programada_para: form.programada_para.value ? desdeLocalEcuador(form.programada_para.value) : "",
+          };
+          api(nueva ? "POST" : "PUT", nueva ? "/transmisiones" : "/transmisiones/" + t.id, cuerpo).then(function () {
+            dialogo.close();
+            aviso(cuerpo.estado === "en_vivo" ? "Listo: la transmisión ya se muestra en la web." : "Transmisión guardada.");
             alGuardar();
           }).catch(fallo);
         });

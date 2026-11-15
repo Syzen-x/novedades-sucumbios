@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "servidor",
-      "url": "http://localhost:3100",
-      "port": 3100
+      "name": "cloudflare-local",
+      "url": "http://localhost:8787",
+      "port": 8787
     }
   ]
 }
