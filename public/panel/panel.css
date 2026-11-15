@@ -314,3 +314,35 @@ tbody tr:hover { background: rgba(255, 255, 255, .02); }
 .vivo-activa h2 { margin: 0 0 4px; }
 .vivo-activa .fila-acciones { margin: 14px 0 8px; }
 @media (prefers-reduced-motion: reduce) { .punto-vivo { animation: none; } }
+
+/* ---------- Celular: nada se sale del ancho de la pantalla ---------- */
+.pila > *, .kpis > *, .graficos > *, .contenido > *, .tarjeta, .editor > *, .dos-columnas > * { min-width: 0; }
+.kpi small { overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .cabeza { align-items: stretch; }
+  .cabeza > div:first-child { flex: 1 1 100%; }
+  .cabeza-acciones { width: 100%; }
+  .cabeza-acciones > .btn { flex: 1 1 auto; justify-content: center; }
+  .tarjeta { padding: 14px; }
+  .kpis { gap: 10px; }
+  .kpi { padding: 12px; }
+  .kpi strong { font-size: 1.45rem; }
+  .periodo { display: flex; width: 100%; }
+  .periodo button { flex: 1; }
+  .barra { grid-template-columns: minmax(70px, 38%) 1fr auto; gap: 8px; }
+
+  /* Tablas → tarjetas apiladas (cada dato con el nombre de su columna) */
+  .tabla-envoltura { overflow: visible; }
+  .tabla-envoltura table, .tabla-envoltura tbody, .tabla-envoltura tr, .tabla-envoltura td { display: block; width: 100%; }
+  .tabla-envoltura thead { display: none; }
+  .tabla-envoltura tr { border: 1px solid var(--borde); border-radius: var(--radio); padding: 10px 12px; margin-bottom: 10px; }
+  .tabla-envoltura td { border: 0; padding: 4px 0; text-align: left !important; overflow-wrap: anywhere; }
+  .tabla-envoltura td[data-etiqueta]:not([data-etiqueta=""])::before {
+    content: attr(data-etiqueta); display: block; font-size: .72rem; font-weight: 650; color: var(--texto-3); margin-bottom: 1px;
+  }
+  .tabla-envoltura td:first-child { font-weight: 650; }
+  .tabla-envoltura td:first-child::before { display: none !important; }
+  .tabla-envoltura td .fila-acciones { justify-content: flex-start !important; margin-top: 6px; }
+  .tabla-envoltura td .fila-acciones .btn { flex: 1 1 auto; justify-content: center; }
+}

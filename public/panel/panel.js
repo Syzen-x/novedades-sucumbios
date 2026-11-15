@@ -1280,6 +1280,19 @@
     });
   }
 
+  /* En celular las tablas se ven como tarjetas: cada celda lleva el nombre de su columna */
+  function etiquetarTablas() {
+    $$(".tabla-envoltura table", app).forEach(function (t) {
+      var nombres = $$("thead th", t).map(function (th) { return th.textContent.trim(); });
+      $$("tbody tr", t).forEach(function (tr) {
+        Array.prototype.forEach.call(tr.children, function (td, i) {
+          if (!td.hasAttribute("data-etiqueta")) td.setAttribute("data-etiqueta", nombres[i] || "");
+        });
+      });
+    });
+  }
+  new MutationObserver(etiquetarTablas).observe(app, { childList: true, subtree: true });
+
   /* ================= Inicio ================= */
   fetch("/api/yo", { credentials: "same-origin" }).then(function (r) {
     if (!r.ok) throw new Error("sin sesión");
