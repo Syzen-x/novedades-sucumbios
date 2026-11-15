@@ -20,13 +20,7 @@
     });
   }
 
-  /* ---------- Logo animado: copia el dibujo en cada lugar donde va ---------- */
-  var plantilla = document.getElementById("marca");
-  document.querySelectorAll("svg.marca").forEach(function (svg) {
-    svg.innerHTML = "";
-    Array.prototype.forEach.call(plantilla.childNodes, function (n) { svg.appendChild(n.cloneNode(true)); });
-  });
-
+  /* ---------- Logo animado de entrada ---------- */
   var intro = document.getElementById("intro");
   if (!reducirMovimiento && !leer("intro-vista")) {
     intro.classList.add("activa");

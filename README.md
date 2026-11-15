@@ -17,7 +17,7 @@ Todo se maneja en **`anuncios/anuncios.js`**. Copia tu imagen o video dentro de 
 
 | Espacio          | Dónde sale                                   | Medida ideal          |
 |------------------|----------------------------------------------|-----------------------|
-| `cabecera`       | Banner grande debajo de la portada           | 1200 × 300            |
+| `cabecera`       | Banner grande debajo de la portada           | 1500 × 500 (3:1)      |
 | `lateral`        | Columna derecha, fijo mientras se lee        | 300 × 600             |
 | `entreNoticias`  | En medio de la lista de noticias             | 800 × 200             |
 | `franja`         | A todo lo ancho, ideal para video            | 1920 × 720 (16:9)     |

@@ -8,8 +8,9 @@
   <meta name="theme-color" content="#0E1A12">
   <meta property="og:title" content="Novedades Sucumbíos">
   <meta property="og:description" content="Noticias de Nueva Loja y toda la provincia de Sucumbíos.">
-  <meta property="og:image" content="assets/portada.jpg">
-  <link rel="icon" href="assets/logo.jpg">
+  <meta property="og:image" content="https://syzen-x.github.io/novedades-sucumbios/assets/portada.jpg">
+  <link rel="icon" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/logo-512.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
@@ -19,41 +20,8 @@
 
   <!-- Logo animado de entrada (una vez por visita) -->
   <div class="intro" id="intro" aria-hidden="true">
-    <svg class="marca marca--intro" viewBox="0 0 400 400">
-      <use href="#marca"/>
-    </svg>
+    <div class="marca marca--intro"><img src="assets/logo.webp" alt=""><span class="marca-brillo"></span></div>
   </div>
-
-  <!-- Definición del logo animado, reutilizado en la cabecera -->
-  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <defs>
-      <clipPath id="recorte"><circle cx="200" cy="200" r="118"/></clipPath>
-      <path id="arco-frente" d="M 34 200 A 166 70 0 0 0 366 200"/>
-      <linearGradient id="oro" x1="0" x2="1">
-        <stop offset="0" stop-color="#B8901A"/>
-        <stop offset=".5" stop-color="#F6D75A"/>
-        <stop offset="1" stop-color="#B8901A"/>
-      </linearGradient>
-      <linearGradient id="brillo" x1="0" x2="1">
-        <stop offset="0" stop-color="#fff" stop-opacity="0"/>
-        <stop offset=".5" stop-color="#fff" stop-opacity=".55"/>
-        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
-      </linearGradient>
-      <g id="marca">
-        <g transform="rotate(-16 200 200)">
-          <path class="anillo anillo--atras" d="M 34 200 A 166 70 0 0 1 366 200"/>
-        </g>
-        <g class="marca-n">
-          <image href="assets/logo.jpg" x="82" y="82" width="236" height="236" clip-path="url(#recorte)" preserveAspectRatio="xMidYMid slice"/>
-          <rect class="marca-brillo" x="-120" y="60" width="90" height="300" fill="url(#brillo)" clip-path="url(#recorte)" transform="skewX(-18)"/>
-        </g>
-        <g transform="rotate(-16 200 200)">
-          <path class="anillo anillo--frente" d="M 34 200 A 166 70 0 0 0 366 200"/>
-          <text class="anillo-texto"><textPath href="#arco-frente" startOffset="50%" text-anchor="middle">NOVEDADES SUCUMBÍOS</textPath></text>
-        </g>
-      </g>
-    </defs>
-  </svg>
 
   <a class="saltar" href="#contenido">Ir a las noticias</a>
 
@@ -65,7 +33,7 @@
 
   <header class="cabecera">
     <a class="logo" href="./" aria-label="Novedades Sucumbíos, inicio">
-      <svg class="marca marca--cabecera" viewBox="0 0 400 400" aria-hidden="true"><use href="#marca"/></svg>
+      <span class="marca marca--cabecera" aria-hidden="true"><img src="assets/logo.webp" alt=""><span class="marca-brillo"></span></span>
       <span class="logo-texto">Novedades<br>Sucumbíos</span>
     </a>
     <nav class="cantones" aria-label="Filtrar por cantón" id="cantones"></nav>
@@ -76,7 +44,7 @@
 
     <!-- Portada -->
     <section class="portada" aria-labelledby="principal-titulo">
-      <div class="portada-fondo" aria-hidden="true"><img src="assets/portada.jpg" alt=""></div>
+      <div class="portada-fondo" aria-hidden="true"><img src="assets/portada.webp" alt=""></div>
       <div class="portada-contenido">
         <article class="principal" id="principal"></article>
         <aside class="vivo">
@@ -173,7 +141,7 @@
   <footer class="pie">
     <div class="envoltura pie-grid">
       <div class="logo logo--pie">
-        <svg class="marca marca--cabecera" viewBox="0 0 400 400" aria-hidden="true"><use href="#marca"/></svg>
+        <span class="marca marca--cabecera" aria-hidden="true"><img src="assets/logo.webp" alt=""><span class="marca-brillo"></span></span>
         <span class="logo-texto">Novedades<br>Sucumbíos</span>
       </div>
       <p>Tratamos de ser la voz de muchos. Nueva Loja, Sucumbíos, Ecuador.</p>

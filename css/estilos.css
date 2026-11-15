@@ -76,13 +76,20 @@ p { margin: 0; }
 
 /* ---------- Logo animado ---------------------------------------------- */
 
-.anillo { fill: none; stroke: var(--verde); stroke-width: 15; stroke-linecap: round; }
-.anillo--atras { stroke: #1F7A32; }
-.anillo-texto {
-  fill: url(#oro); font-family: var(--display); font-weight: 900; font-stretch: 80%;
-  font-size: 25px; letter-spacing: 2px; dominant-baseline: middle;
+.marca { position: relative; display: block; }
+.marca img { display: block; width: 100%; height: auto; }
+/* destello que recorre solo la forma del logo (la máscara es el mismo logo) */
+.marca-brillo {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  -webkit-mask: url(../assets/logo.webp) center / contain no-repeat;
+  mask: url(../assets/logo.webp) center / contain no-repeat;
 }
-.marca { display: block; overflow: visible; }
+.marca-brillo::before {
+  content: ""; position: absolute; top: -10%; bottom: -10%; left: -70%; width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .8), transparent);
+  transform: skewX(-20deg);
+}
+@keyframes brillo { from { left: -70%; } to { left: 130%; } }
 
 /* Entrada: solo una vez por visita */
 .intro {
@@ -91,25 +98,31 @@ p { margin: 0; }
   background: radial-gradient(60% 60% at 50% 50%, #183A22 0%, var(--carbon) 70%);
   pointer-events: none;
 }
-.intro .marca { width: min(86vmin, 720px); }
-.intro.activa { animation: intro-salida .7s 2.5s cubic-bezier(.7, 0, .2, 1) forwards; }
-.intro.activa .marca-n { animation: n-sube 1s .1s cubic-bezier(.2, .9, .2, 1.15) both; transform-origin: 200px 200px; transform-box: view-box; }
-.intro.activa .anillo { stroke-dasharray: 420; animation: anillo-traza 1s cubic-bezier(.6, 0, .2, 1) both; }
-.intro.activa .anillo--atras { animation-delay: .5s; }
-.intro.activa .anillo--frente { animation-delay: .75s; }
-.intro.activa .anillo-texto { animation: texto-entra 1s 1.2s cubic-bezier(.2, .8, .2, 1) both; }
-.intro.activa .marca-brillo { animation: brillo 1.1s 1.5s ease-in-out both; }
+.intro .marca { width: min(72vmin, 560px); }
+.intro .marca::after {
+  content: ""; position: absolute; inset: 8%; z-index: -1; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(110, 214, 70, .55), transparent);
+  filter: blur(30px); opacity: 0;
+}
+.intro.activa { animation: intro-salida .7s 2.6s cubic-bezier(.7, 0, .2, 1) forwards; }
+.intro.activa .marca img { animation: logo-entra 1.2s .1s cubic-bezier(.2, .9, .25, 1.12) both; }
+.intro.activa .marca::after { animation: resplandor 1.4s .5s ease-out forwards; }
+.intro.activa .marca-brillo::before { animation: brillo 1s 1.3s ease-in-out both; }
 .intro.oculta { display: none; }
 
-@keyframes n-sube { from { opacity: 0; transform: translateY(60px) scale(.6); } to { opacity: 1; transform: none; } }
-@keyframes anillo-traza { from { stroke-dashoffset: 420; } to { stroke-dashoffset: 0; } }
-@keyframes texto-entra { from { opacity: 0; letter-spacing: 30px; } to { opacity: 1; letter-spacing: 2px; } }
-@keyframes brillo { from { transform: skewX(-18deg) translateX(0); } to { transform: skewX(-18deg) translateX(560px); } }
-@keyframes intro-salida { to { opacity: 0; transform: scale(1.08); visibility: hidden; } }
+@keyframes logo-entra {
+  from { opacity: 0; transform: perspective(900px) rotateY(-75deg) scale(.55) translateY(40px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes resplandor { to { opacity: 1; } }
+@keyframes intro-salida { to { opacity: 0; transform: scale(1.06); visibility: hidden; } }
 
-/* El logo de la cabecera se ilumina al pasar el cursor */
-.logo:hover .marca-brillo { animation: brillo .9s ease-in-out; }
-.logo:hover .anillo--frente { stroke: var(--verde-claro); }
+/* En la cabecera, un destello cada pocos segundos y al pasar el cursor */
+.marca--cabecera .marca-brillo::before { animation: brillo-pausa 9s 3.5s ease-in-out infinite; }
+.logo:hover .marca--cabecera .marca-brillo::before { animation: brillo .8s ease-in-out; }
+.logo:hover .marca--cabecera img { transform: rotate(-4deg) scale(1.06); }
+.marca--cabecera img { transition: transform .3s cubic-bezier(.2, .9, .25, 1.2); }
+@keyframes brillo-pausa { 0% { left: -70%; } 12%, 100% { left: 130%; } }
 
 /* ---------- Última hora ----------------------------------------------- */
 
@@ -140,7 +153,7 @@ p { margin: 0; }
   border-bottom: 1px solid rgba(181, 225, 75, .12);
 }
 .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; flex: none; }
-.marca--cabecera { width: 66px; height: 66px; margin: -8px -6px; }
+.marca--cabecera { width: 64px; flex: none; margin-block: -6px; }
 .logo-texto { font-weight: 900; font-stretch: 75%; font-size: 1.15rem; line-height: .95; letter-spacing: .01em; }
 
 .cantones { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; flex: 1; justify-content: center; }
@@ -155,15 +168,15 @@ p { margin: 0; }
 
 /* ---------- Portada --------------------------------------------------- */
 
-/* La foto de portada se corre a la derecha para que el logo del río se vea entero */
-.portada { position: relative; isolation: isolate; overflow: hidden; min-height: min(80vh, 740px); display: flex; align-items: flex-end; }
-.portada-fondo { position: absolute; inset: 0 0 0 36%; z-index: -1; overflow: hidden; }
-.portada-fondo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%; animation: acercar 30s ease-in-out infinite alternate; }
+/* La foto de portada deja el lado izquierdo libre para el titular; el logo queda a la derecha */
+.portada { position: relative; isolation: isolate; overflow: hidden; min-height: min(80vh, 760px); display: flex; align-items: flex-end; }
+.portada-fondo { position: absolute; inset: 0; z-index: -1; overflow: hidden; }
+.portada-fondo img { width: 100%; height: 100%; object-fit: cover; object-position: 80% 45%; transform-origin: 75% 50%; animation: acercar 30s ease-in-out infinite alternate; }
 .portada-fondo::after {
   content: ""; position: absolute; inset: 0;
   background:
-    linear-gradient(90deg, var(--carbon) 0%, rgba(14, 26, 18, .6) 14%, rgba(14, 26, 18, 0) 34%),
-    linear-gradient(0deg, var(--carbon) 0%, rgba(14, 26, 18, .5) 22%, rgba(14, 26, 18, 0) 50%);
+    linear-gradient(90deg, rgba(14, 26, 18, .94) 0%, rgba(14, 26, 18, .78) 32%, rgba(14, 26, 18, .2) 52%, rgba(14, 26, 18, 0) 62%),
+    linear-gradient(0deg, var(--carbon) 0%, rgba(14, 26, 18, .4) 18%, rgba(14, 26, 18, 0) 40%);
 }
 @keyframes acercar { from { transform: scale(1); } to { transform: scale(1.07); } }
 
@@ -237,7 +250,7 @@ p { margin: 0; }
 .ad-casa span { color: #CFE6C0; }
 .ad-casa a { background: var(--oro); color: #142012; font-weight: 800; padding: 10px 20px; border-radius: 999px; text-decoration: none; }
 
-.anuncio--cabecera { aspect-ratio: 4 / 1; border-radius: var(--radio-grande); margin: 8px 0 56px; box-shadow: 0 0 0 1px rgba(233, 192, 42, .35), 0 24px 60px -24px rgba(47, 158, 68, .55); }
+.anuncio--cabecera { aspect-ratio: 3 / 1; border-radius: var(--radio-grande); margin: 8px 0 56px; box-shadow: 0 0 0 1px rgba(233, 192, 42, .35), 0 24px 60px -24px rgba(47, 158, 68, .55); }
 .anuncio--lateral { aspect-ratio: 1 / 2; border-radius: var(--radio-grande); box-shadow: 0 0 0 1px rgba(233, 192, 42, .3); }
 .anuncio--entre { aspect-ratio: 4 / 1; border-radius: var(--radio); margin: 8px 0 8px 36px; }
 .franja { margin: 72px 0; }
@@ -366,7 +379,7 @@ p { margin: 0; }
 @media (max-width: 640px) {
   .cabecera { flex-wrap: wrap; gap: 6px 12px; padding-block: 8px 4px; }
   .cantones { order: 3; flex-basis: 100%; margin-inline: calc(var(--margen) * -1); padding-inline: var(--margen); padding-bottom: 6px; }
-  .marca--cabecera { width: 48px; height: 48px; }
+  .marca--cabecera { width: 50px; }
   .portada-contenido { margin-top: -28px; }
   .principal p { font-size: 1.05rem; }
   .vivo { grid-template-columns: 1fr; }

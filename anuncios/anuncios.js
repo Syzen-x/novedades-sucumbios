@@ -36,9 +36,9 @@ window.ANUNCIOS = {
   },
 
   espacios: {
-    /* Banner grande debajo de la portada (muy visible). Medida ideal: 1200 x 300 */
+    /* Banner grande debajo de la portada (muy visible). Medida ideal: 1500 x 500 (3:1) */
     cabecera: [
-      { tipo: "imagen", src: "anuncios/demo/banner-cabecera.svg", enlace: "#anunciate", texto: "Anúnciate en Novedades Sucumbíos" },
+      { tipo: "imagen", src: "anuncios/demo/banner-anunciate.webp", enlace: "#anunciate", texto: "Tu negocio frente a toda la provincia. Anúnciate aquí" },
       { tipo: "video", src: "anuncios/demo/video-demo.mp4", poster: "anuncios/demo/video-demo-poster.jpg", enlace: "#anunciate", duracion: 8 }
     ],
 
@@ -49,6 +49,7 @@ window.ANUNCIOS = {
 
     /* Aparece en medio de la lista de noticias. Medida ideal: 800 x 200 */
     entreNoticias: [
+      { tipo: "imagen", src: "anuncios/demo/banner-anunciate.webp", enlace: "#anunciate", texto: "Tu negocio frente a toda la provincia. Anúnciate aquí" },
       { tipo: "html", html: "<div class='ad-casa'><strong>¿Tienes un negocio en Sucumbíos?</strong><span>Pon tu anuncio entre las noticias más leídas de la provincia.</span><a href='#anunciate'>Ver precios</a></div>" }
     ],
 
