@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Novedades Sucumbíos — Noticias de Nueva Loja y toda la provincia</title>
+  <meta name="description" content="Noticias de Lago Agrio, Shushufindi, Cascales, Putumayo, Cuyabeno y toda la provincia de Sucumbíos. La voz de muchos.">
+  <meta name="theme-color" content="#0E1A12">
+  <meta property="og:title" content="Novedades Sucumbíos">
+  <meta property="og:description" content="Noticias de Nueva Loja y toda la provincia de Sucumbíos.">
+  <meta property="og:image" content="assets/portada.jpg">
+  <link rel="icon" href="assets/logo.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+
+  <!-- Logo animado de entrada (una vez por visita) -->
+  <div class="intro" id="intro" aria-hidden="true">
+    <svg class="marca marca--intro" viewBox="0 0 400 400">
+      <use href="#marca"/>
+    </svg>
+  </div>
+
+  <!-- Definición del logo animado, reutilizado en la cabecera -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <clipPath id="recorte"><circle cx="200" cy="200" r="118"/></clipPath>
+      <path id="arco-frente" d="M 34 200 A 166 70 0 0 0 366 200"/>
+      <linearGradient id="oro" x1="0" x2="1">
+        <stop offset="0" stop-color="#B8901A"/>
+        <stop offset=".5" stop-color="#F6D75A"/>
+        <stop offset="1" stop-color="#B8901A"/>
+      </linearGradient>
+      <linearGradient id="brillo" x1="0" x2="1">
+        <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+        <stop offset=".5" stop-color="#fff" stop-opacity=".55"/>
+        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+      </linearGradient>
+      <g id="marca">
+        <g transform="rotate(-16 200 200)">
+          <path class="anillo anillo--atras" d="M 34 200 A 166 70 0 0 1 366 200"/>
+        </g>
+        <g class="marca-n">
+          <image href="assets/logo.jpg" x="82" y="82" width="236" height="236" clip-path="url(#recorte)" preserveAspectRatio="xMidYMid slice"/>
+          <rect class="marca-brillo" x="-120" y="60" width="90" height="300" fill="url(#brillo)" clip-path="url(#recorte)" transform="skewX(-18)"/>
+        </g>
+        <g transform="rotate(-16 200 200)">
+          <path class="anillo anillo--frente" d="M 34 200 A 166 70 0 0 0 366 200"/>
+          <text class="anillo-texto"><textPath href="#arco-frente" startOffset="50%" text-anchor="middle">NOVEDADES SUCUMBÍOS</textPath></text>
+        </g>
+      </g>
+    </defs>
+  </svg>
+
+  <a class="saltar" href="#contenido">Ir a las noticias</a>
+
+  <!-- Última hora -->
+  <div class="ultima" role="region" aria-label="Última hora">
+    <span class="ultima-tag"><span class="punto" aria-hidden="true"></span>Última hora</span>
+    <div class="ultima-cinta"><div class="ultima-pista" id="cinta"></div></div>
+  </div>
+
+  <header class="cabecera">
+    <a class="logo" href="./" aria-label="Novedades Sucumbíos, inicio">
+      <svg class="marca marca--cabecera" viewBox="0 0 400 400" aria-hidden="true"><use href="#marca"/></svg>
+      <span class="logo-texto">Novedades<br>Sucumbíos</span>
+    </a>
+    <nav class="cantones" aria-label="Filtrar por cantón" id="cantones"></nav>
+    <a class="boton boton--oro" href="https://t.me/novedadessucumbios" target="_blank" rel="noopener">Únete en Telegram</a>
+  </header>
+
+  <main id="contenido">
+
+    <!-- Portada -->
+    <section class="portada" aria-labelledby="principal-titulo">
+      <div class="portada-fondo" aria-hidden="true"><img src="assets/portada.jpg" alt=""></div>
+      <div class="portada-contenido">
+        <article class="principal" id="principal"></article>
+        <aside class="vivo">
+          <a class="vivo-tarjeta" href="https://www.facebook.com/novedadessucumbios/live_videos" target="_blank" rel="noopener">
+            <span class="vivo-tag"><span class="punto" aria-hidden="true"></span>En vivo</span>
+            <strong>Transmisiones desde la calle</strong>
+            <span>Motocaravanas, eventos y lo que pasa en la provincia, en directo por Facebook.</span>
+            <span class="vivo-ver">Ver transmisiones</span>
+          </a>
+          <div class="seguidores">
+            <strong data-contar="763000">763K</strong>
+            <span>personas siguen la página en Facebook</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ANUNCIO: cabecera -->
+    <div class="envoltura">
+      <aside class="anuncio anuncio--cabecera" data-espacio="cabecera" aria-label="Publicidad"></aside>
+    </div>
+
+    <div class="envoltura columnas">
+      <section class="lista" aria-labelledby="lo-ultimo">
+        <div class="lista-cabeza">
+          <h2 id="lo-ultimo">Lo último</h2>
+          <p class="lista-filtro" id="filtro-actual">Toda la provincia</p>
+        </div>
+        <div id="noticias" class="noticias"></div>
+      </section>
+
+      <aside class="lateral">
+        <div class="lateral-fijo">
+          <aside class="anuncio anuncio--lateral" data-espacio="lateral" aria-label="Publicidad"></aside>
+          <div class="fb-caja">
+            <h2>En Facebook ahora</h2>
+            <iframe title="Publicaciones de Novedades Sucumbíos en Facebook" loading="lazy"
+              src="https://www.facebook.com/plugins/page.php?href=https%3A%2F%2Fwww.facebook.com%2Fnovedadessucumbios&tabs=timeline&width=320&height=520&small_header=true&adapt_container_width=true&hide_cover=true&show_facepile=false"
+              width="320" height="520" style="border:none;overflow:hidden" scrolling="no" allowfullscreen
+              allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- ANUNCIO: franja de video a todo lo ancho -->
+    <section class="franja" aria-label="Publicidad">
+      <aside class="anuncio anuncio--franja" data-espacio="franja"></aside>
+    </section>
+
+    <!-- Comunidad -->
+    <section class="envoltura comunidad" aria-labelledby="comunidad-titulo">
+      <h2 id="comunidad-titulo">Recibe las noticias donde prefieras</h2>
+      <div class="redes">
+        <a class="red red--fb" href="https://www.facebook.com/novedadessucumbios" target="_blank" rel="noopener">
+          <strong>Facebook</strong><span>Noticias y transmisiones en vivo</span>
+        </a>
+        <a class="red red--tg" href="https://t.me/novedadessucumbios" target="_blank" rel="noopener">
+          <strong>Telegram</strong><span>Alertas al instante en tu celular</span>
+        </a>
+        <a class="red red--tt" href="https://www.tiktok.com/@novedadesucumbio" target="_blank" rel="noopener">
+          <strong>TikTok</strong><span>Videos cortos de la provincia</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- Anúnciate -->
+    <section class="anunciate" id="anunciate" aria-labelledby="anunciate-titulo">
+      <div class="envoltura anunciate-grid">
+        <div>
+          <h2 id="anunciate-titulo">Pon tu negocio frente a toda la provincia</h2>
+          <p>Publicamos tu anuncio en imagen, GIF o video, en los espacios más vistos de la web. Tú eliges dónde sale y por cuántos días.</p>
+          <div class="anunciate-acciones" id="contacto-anuncios">
+            <a class="boton boton--oro" href="mailto:sucumbiosaldia1@gmail.com?subject=Quiero%20anunciar%20en%20Novedades%20Sucumb%C3%ADos">Escribir por correo</a>
+          </div>
+        </div>
+        <figure class="mapa-anuncios" aria-label="Lugares donde puede salir tu anuncio">
+          <div class="ma-pagina">
+            <div class="ma-portada">Portada</div>
+            <div class="ma ma--cabecera">Banner principal</div>
+            <div class="ma-cuerpo">
+              <div class="ma-noticias"><i></i><i></i><div class="ma ma--entre">Entre noticias</div><i></i></div>
+              <div class="ma ma--lateral">Lateral fijo</div>
+            </div>
+            <div class="ma ma--franja">Franja de video</div>
+            <div class="ma ma--flotante">Flotante</div>
+          </div>
+          <figcaption>Cinco espacios. Cada uno acepta imagen, GIF, video o YouTube.</figcaption>
+        </figure>
+      </div>
+    </section>
+  </main>
+
+  <footer class="pie">
+    <div class="envoltura pie-grid">
+      <div class="logo logo--pie">
+        <svg class="marca marca--cabecera" viewBox="0 0 400 400" aria-hidden="true"><use href="#marca"/></svg>
+        <span class="logo-texto">Novedades<br>Sucumbíos</span>
+      </div>
+      <p>Tratamos de ser la voz de muchos. Nueva Loja, Sucumbíos, Ecuador.</p>
+      <p><a href="mailto:sucumbiosaldia1@gmail.com">sucumbiosaldia1@gmail.com</a></p>
+    </div>
+  </footer>
+
+  <!-- ANUNCIO: flotante -->
+  <aside class="flotante" id="flotante" aria-label="Publicidad" hidden>
+    <button class="flotante-cerrar" type="button" aria-label="Cerrar anuncio">×</button>
+    <div class="anuncio anuncio--flotante" data-espacio="flotante"></div>
+  </aside>
+
+  <script src="anuncios/anuncios.js"></script>
+  <script src="datos/noticias.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

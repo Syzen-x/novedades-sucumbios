@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 600" width="300" height="600">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1F6E33"/>
+      <stop offset="1" stop-color="#0E2415"/>
+    </linearGradient>
+  </defs>
+  <rect width="300" height="600" fill="url(#g)"/>
+  <path d="M-10 420 C60 380 110 450 170 410 S260 360 310 390" fill="none" stroke="#B5E14B" stroke-opacity=".3" stroke-width="3"/>
+  <path d="M-10 460 C70 430 130 490 200 455 S280 420 310 440" fill="none" stroke="#B5E14B" stroke-opacity=".15" stroke-width="2"/>
+  <text x="30" y="90" font-family="Archivo, Arial Narrow, Arial, sans-serif" font-weight="900" font-size="46" fill="#EEF3E8">Este</text>
+  <text x="30" y="140" font-family="Archivo, Arial Narrow, Arial, sans-serif" font-weight="900" font-size="46" fill="#EEF3E8">espacio</text>
+  <text x="30" y="190" font-family="Archivo, Arial Narrow, Arial, sans-serif" font-weight="900" font-size="46" fill="#E9C02A">es tuyo</text>
+  <text x="30" y="245" font-family="Archivo, Arial, sans-serif" font-size="19" fill="#CFE6C0">Imagen, GIF o video.</text>
+  <text x="30" y="272" font-family="Archivo, Arial, sans-serif" font-size="19" fill="#CFE6C0">Visible en todo momento</text>
+  <text x="30" y="299" font-family="Archivo, Arial, sans-serif" font-size="19" fill="#CFE6C0">mientras la gente lee.</text>
+  <rect x="30" y="510" width="240" height="54" rx="27" fill="#E9C02A"/>
+  <text x="150" y="545" text-anchor="middle" font-family="Archivo, Arial, sans-serif" font-weight="800" font-size="21" fill="#132015">Quiero anunciar</text>
+</svg>
