@@ -2,10 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "web",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "5173"],
-      "port": 5173
+      "name": "servidor",
+      "url": "http://localhost:3100",
+      "port": 3100
     }
   ]
 }

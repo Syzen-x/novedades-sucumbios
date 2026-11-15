@@ -1,0 +1,11 @@
+{$DOMINIO} {
+	encode zstd gzip
+	request_body {
+		max_size 320MB
+	}
+	reverse_proxy web:3000
+}
+
+www.{$DOMINIO} {
+	redir https://{$DOMINIO}{uri} permanent
+}

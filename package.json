@@ -1,0 +1,23 @@
+{
+  "name": "novedades-sucumbios",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Web de noticias de Novedades Sucumbíos con panel de administración",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "usuario": "node src/cli-usuario.js"
+  },
+  "dependencies": {
+    "compression": "^1.8.2",
+    "express": "^5.3.0",
+    "helmet": "^8.3.0",
+    "multer": "^2.5.0",
+    "sharp": "^0.34.5"
+  }
+}
